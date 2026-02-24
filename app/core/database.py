@@ -39,6 +39,20 @@ class Database:
         conn.close()
 
     @staticmethod
+    def clear_data():
+        """Deletes all data from the presentations table"""
+        conn = Database._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('DELETE FROM presentations')
+            conn.commit()
+            print("Database cleared.", flush=True)
+        except Exception as e:
+            print(f"Error clearing database: {e}")
+        finally:
+            conn.close()
+
+    @staticmethod
     def save_product(code, data):
         """
         Parses the product JSON and inserts flattened presentation rows.
@@ -182,3 +196,14 @@ class Database:
         count = cursor.fetchone()[0]
         conn.close()
         return count
+
+    @staticmethod
+    def get_all_presentations_raw():
+        conn = Database._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM presentations ORDER BY codigo_produto')
+        rows = cursor.fetchall()
+        result = [dict(row) for row in rows]
+        conn.close()
+        return result

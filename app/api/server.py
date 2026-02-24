@@ -6,6 +6,8 @@ import threading
 import glob
 import os
 import math
+import csv
+import io
 from app.services.orchestrator import ExtractionOrchestrator
 from app.core.database import Database
 
@@ -25,6 +27,8 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_progress()
         elif self.path.startswith('/api/results'):
             self.handle_results()
+        elif self.path == '/api/export':
+            self.handle_export()
         else:
             # Fallback
             if not self.path.startswith("/frontend/") and not self.path.startswith("/api/"):
@@ -94,6 +98,48 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         except Exception as e:
             print(f"Results Error: {e}")
+            self.send_error(500, str(e))
+
+    def handle_export(self):
+        try:
+            # Retrieve all data
+            data = Database.get_all_presentations_raw()
+            
+            # Create CSV in memory
+            output = io.StringIO()
+            writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+            
+            # Headers
+            headers = ["ID", "Código Produto", "Nome Comercial", "Registro MS", "Apresentação", "Embalagem", "Validade", "Tarja", "Princípio Ativo", "Classes Terapêuticas", "Atualizado Em"]
+            writer.writerow(headers)
+            
+            for row in data:
+                writer.writerow([
+                    row.get("id"),
+                    row.get("codigo_produto"),
+                    row.get("nome_comercial"),
+                    row.get("numero_registro"),
+                    row.get("apresentacao"),
+                    row.get("embalagem"),
+                    row.get("validade"),
+                    row.get("tarja"),
+                    row.get("principio_ativo"),
+                    row.get("classes_terapeuticas"),
+                    row.get("updated_at")
+                ])
+                
+            csv_content = output.getvalue()
+            # Add BOM for Excel UTF-8 compatibility
+            csv_content_bom = '\ufeff' + csv_content
+            
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/csv; charset=utf-8')
+            self.send_header('Content-Disposition', 'attachment; filename=sngpc_data.csv')
+            self.end_headers()
+            self.wfile.write(csv_content_bom.encode('utf-8'))
+            
+        except Exception as e:
+            print(f"Export Error: {e}")
             self.send_error(500, str(e))
 
 def run_server():

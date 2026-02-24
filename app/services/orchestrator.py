@@ -45,6 +45,11 @@ class ExtractionOrchestrator:
         try:
             # Initialize DB
             Database.init_db()
+            
+            if not reuse_bulk:
+                self._update_status("RUNNING_BULK", "Clearing database for fresh extraction...", 0, 0, 0)
+                Database.clear_data()
+                time.sleep(1)
 
             # Phase 1: Bulk
             if reuse_bulk and os.path.exists("data/bulk_products.json") and os.path.getsize("data/bulk_products.json") > 0:

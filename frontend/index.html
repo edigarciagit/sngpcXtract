@@ -392,6 +392,11 @@
                     <button id="start-btn" class="btn" onclick="startExtraction()">
                         <span>INICIAR PROCESSO</span>
                     </button>
+
+                    <button id="export-btn" class="btn" onclick="exportData()"
+                        style="margin-top: 8px; background: var(--surface); color: var(--text-primary); border: 1px solid var(--border);">
+                        <span>EXPORTAR CSV</span>
+                    </button>
                 </div>
             </div>
 
@@ -607,6 +612,10 @@
             } else {
                 return `<span class="badge badge-yellow">${tarja}</span>`;
             }
+        }
+
+        function exportData() {
+            window.location.href = '/api/export';
         }
 
         // Initial Check

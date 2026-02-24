@@ -15,7 +15,7 @@ class BulkScraper:
             "filter[checkRegistrado]": "true",
             "filter[prescricoes]": "536,537,538,539,27414,540",
             "filter[situacaoRegistro]": "V",
-            "filter[tarjas]": "2,3,4",
+            "filter[tarjas]": "3,4",
             "order": "asc",
             "page": "1"
         }
