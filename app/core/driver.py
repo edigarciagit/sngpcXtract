@@ -2,11 +2,14 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+from app.core.logger import get_logger
+
+logger = get_logger("webdriver")
 
 class WebDriverFactory:
     @staticmethod
     def create_driver(headless=True):
-        print("Initializing Selenium WebDriver...", flush=True)
+        logger.info("Initializing Selenium WebDriver...")
         options = Options()
         if headless:
             options.add_argument("--headless")

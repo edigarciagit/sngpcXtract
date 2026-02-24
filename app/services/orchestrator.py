@@ -9,6 +9,11 @@ from app.services.scraper_bulk import BulkScraper
 from app.services.scraper_single import SingleScraper
 from app.core.driver import WebDriverFactory
 from app.core.database import Database
+from app.core.logger import setup_logging, get_logger
+
+# Initialize global logging once
+setup_logging()
+logger = get_logger("orchestrator")
 
 class ExtractionOrchestrator:
     _instance = None
@@ -26,6 +31,8 @@ class ExtractionOrchestrator:
             }
             cls._instance.thread = None
             cls._instance.stop_event = threading.Event()
+            cls._instance.confirmation_event = threading.Event()
+            cls._instance.confirmation_response = None # True = Proceed, False = Abort
         return cls._instance
 
     def start(self, reuse_bulk=False):
@@ -37,6 +44,11 @@ class ExtractionOrchestrator:
         self.thread.start()
         return True, "Started."
 
+    def confirm_extraction(self, proceed=True):
+        self.confirmation_response = proceed
+        self.confirmation_event.set()
+        return True, "Confirmation received."
+
     def get_status(self):
         with self._lock:
             return self.status.copy()
@@ -47,8 +59,18 @@ class ExtractionOrchestrator:
             Database.init_db()
             
             if not reuse_bulk:
-                self._update_status("RUNNING_BULK", "Clearing database for fresh extraction...", 0, 0, 0)
+                self._update_status("RUNNING_BULK", "Clearing database and cache for fresh extraction...", 0, 0, 0)
                 Database.clear_data()
+                
+                # Clear bulk products cache file
+                bulk_file = "data/bulk_products.json"
+                if os.path.exists(bulk_file):
+                    try:
+                        os.remove(bulk_file)
+                        logger.info(f"Cleared existing cache: {bulk_file}")
+                    except Exception as e:
+                        logger.warning(f"Could not clear {bulk_file}: {e}")
+                
                 time.sleep(1)
 
             # Phase 1: Bulk
@@ -58,10 +80,23 @@ class ExtractionOrchestrator:
             else:
                 self._update_status("RUNNING_BULK", "Fetching product codes list...", 0, 0, 5)
                 bulk = BulkScraper()
-                count = bulk.run() 
+                
+                def on_count_found(count):
+                    self._update_status("AWAITING_CONFIRMATION", f"Found {count} products.", count, 0, 5)
+                    self.confirmation_event.clear()
+                    self.confirmation_event.wait() # Blocking wait
+                    return self.confirmation_response
+
+                count = bulk.run(on_count_callback=on_count_found) 
+                
+                if count == 0 and not self.confirmation_response:
+                    self._update_status("IDLE", "Extraction aborted by user.", 0, 0, 0)
+                    return
                 
                 if not os.path.exists("data/bulk_products.json"):
+                    logger.error("Bulk extraction failed - output file missing.")
                     raise Exception("Bulk scraping failed to produce output file.")
+                logger.info(f"Bulk extraction completed: {count} codes found.")
 
             # Phase 2: Details (Parallel)
             with open("data/bulk_products.json", 'r', encoding='utf-8') as f:
@@ -79,7 +114,8 @@ class ExtractionOrchestrator:
             chunk_size = ceil(total_items / num_workers)
             chunks = [codes_list[i:i + chunk_size] for i in range(0, total_items, chunk_size)]
             
-            print(f"Starting {len(chunks)} threads for {total_items} items.", flush=True)
+            
+            logger.info(f"Starting {len(chunks)} threads for {total_items} items.")
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
                 futures = []
@@ -92,14 +128,12 @@ class ExtractionOrchestrator:
                 # Check for exceptions
                 for future in futures:
                     if future.exception():
-                        print(f"Thread Error: {future.exception()}")
-                        # We continue even if one thread fails, but log it? 
-                        # Or fail whole process? Let's check if all failed.
+                        logger.error(f"Thread Error: {future.exception()}")
 
             self._update_status("COMPLETED", "Extraction finished successfully.", total_items, total_items, 100)
             
         except Exception as e:
-            print(f"Orchestrator Error: {e}")
+            logger.exception(f"Orchestrator Pipeline Error: {e}")
             self._update_status("ERROR", str(e), 0, 0, 0)
 
     def _process_chunk(self, chunk):
@@ -113,16 +147,21 @@ class ExtractionOrchestrator:
             driver.get("https://consultas.anvisa.gov.br/")
             time.sleep(5)
             
-            for item in chunk:
+            # Process in sub-batches of 5 for maximum JS concurrency
+            sub_batch_size = 5
+            for i in range(0, len(chunk), sub_batch_size):
                 if self.stop_event.is_set():
                     break
-                    
-                code = item.get("codigoProduto")
-                if not code: 
-                    continue
                 
-                # Renew Session logic (200 items safety per thread)
-                if items_since_renew >= 200:
+                sub_batch = chunk[i:i + sub_batch_size]
+                codes = [item.get("codigoProduto") for item in sub_batch if item.get("codigoProduto")]
+                
+                if not codes:
+                    continue
+
+                # Renew Session logic (approx 500 items safety per thread/browser)
+                if items_since_renew >= 500:
+                    logger.info("Renewing worker session for stability...")
                     driver.quit()
                     time.sleep(2)
                     driver = WebDriverFactory.create_driver(headless=True)
@@ -130,28 +169,34 @@ class ExtractionOrchestrator:
                     time.sleep(5)
                     items_since_renew = 0
                 
-                # Scrape
-                data = scraper.scrape(code, driver=driver)
+                # Scrape entire sub-batch concurrently in JS
+                results = scraper.scrape_batch(codes, driver=driver)
                 
-                if data:
-                    # Save to DB instead of file
-                    Database.save_product(code, data)
+                # Save results and update progress
+                processed_count = 0
+                for code, data in results:
+                    if data:
+                        Database.save_product(code, data)
+                        processed_count += 1
                 
-                items_since_renew += 1
+                items_since_renew += len(codes)
                 
                 # Update Global Progress
                 with self._lock:
-                    self.status["current"] += 1
+                    # We increment by the total size of planned codes in the sub-batch
+                    # even if some failed, to keep the percent calculation correct.
+                    self.status["current"] += len(codes)
                     current = self.status["current"]
                     total = self.status["total"]
                     if total > 0:
-                        self.status["percent"] = 10 + int((current / total) * 90)
-                        self.status["message"] = f"Processed {current}/{total}"
+                        self.status["percent"] = 10 + int((min(current, total) / total) * 90)
+                        self.status["message"] = f"Processed {current}/{total} (Turbo Mode)"
 
-                time.sleep(random.uniform(0.2, 0.5)) # Slightly faster delay for parallel
+                # Small polite delay between batches
+                time.sleep(random.uniform(0.5, 1.0))
 
         except Exception as e:
-            print(f"Worker Crash: {e}", flush=True)
+            logger.exception(f"Worker thread crashed: {e}")
             raise e
         finally:
             if driver:

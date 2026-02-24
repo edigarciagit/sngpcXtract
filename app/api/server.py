@@ -10,12 +10,15 @@ import csv
 import io
 from app.services.orchestrator import ExtractionOrchestrator
 from app.core.database import Database
+from app.core.logger import get_logger
+
+logger = get_logger("api_server")
 
 PORT = 8000
 
 class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        print(f"GET Request: {self.path}", flush=True)
+        logger.debug(f"GET Request: {self.path}")
         if self.path == "/" or self.path == "/index.html":
             self.path = "/frontend/index.html"
             super().do_GET()
@@ -29,6 +32,8 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_results()
         elif self.path == '/api/export':
             self.handle_export()
+        elif self.path == '/api/logs':
+            self.handle_logs()
         else:
             # Fallback
             if not self.path.startswith("/frontend/") and not self.path.startswith("/api/"):
@@ -38,6 +43,8 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/api/extract':
             self.handle_extract()
+        elif self.path == '/api/confirm':
+            self.handle_confirm()
         else:
             self.send_error(404, "Not Found")
 
@@ -52,6 +59,28 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         orchestrator = ExtractionOrchestrator()
         success, msg = orchestrator.start(reuse_bulk=reuse_bulk)
+        
+        self.send_response(200 if success else 400)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"success": success, "message": msg}).encode('utf-8'))
+        
+        if success:
+            logger.info("Extraction process triggered via API.")
+        else:
+            logger.warning(f"Failed to trigger extraction: {msg}")
+
+    def handle_confirm(self):
+        content_len = int(self.headers.get('Content-Length', 0))
+        post_body = self.rfile.read(content_len)
+        try:
+            params = json.loads(post_body.decode('utf-8'))
+            proceed = params.get('proceed', True)
+        except:
+            proceed = True
+
+        orchestrator = ExtractionOrchestrator()
+        success, msg = orchestrator.confirm_extraction(proceed=proceed)
         
         self.send_response(200 if success else 400)
         self.send_header('Content-type', 'application/json')
@@ -97,7 +126,7 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(response).encode('utf-8'))
 
         except Exception as e:
-            print(f"Results Error: {e}")
+            logger.error(f"Error handling results API: {e}")
             self.send_error(500, str(e))
 
     def handle_export(self):
@@ -139,7 +168,28 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(csv_content_bom.encode('utf-8'))
             
         except Exception as e:
-            print(f"Export Error: {e}")
+            logger.error(f"Error handling export API: {e}")
+            self.send_error(500, str(e))
+
+    def handle_logs(self):
+        try:
+            log_file = "logs/app.log"
+            max_lines = 100
+            
+            if not os.path.exists(log_file):
+                lines = []
+            else:
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    # Read all lines and take last N
+                    all_lines = f.readlines()
+                    lines = all_lines[-max_lines:]
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"lines": lines}).encode('utf-8'))
+        except Exception as e:
+            logger.error(f"Error handling logs API: {e}")
             self.send_error(500, str(e))
 
 def run_server():
@@ -147,5 +197,5 @@ def run_server():
     # Initialize DB on startup
     Database.init_db()
     with socketserver.TCPServer(("", PORT), ProxyHTTPRequestHandler) as httpd:
-        print(f"Server running at http://localhost:{PORT}", flush=True)
+        logger.info(f"API Server started and listening at http://localhost:{PORT}")
         httpd.serve_forever()

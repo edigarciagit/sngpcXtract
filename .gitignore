@@ -24,3 +24,5 @@ coverage.xml
 node_modules/
 .DS_Store
 data/
+logs/
+*.log

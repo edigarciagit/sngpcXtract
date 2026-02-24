@@ -3,6 +3,9 @@ import random
 import time
 import urllib.parse
 from app.core.driver import WebDriverFactory
+from app.core.logger import get_logger
+
+logger = get_logger("scraper_bulk")
 
 class BulkScraper:
     def __init__(self):
@@ -11,22 +14,19 @@ class BulkScraper:
         self.default_params = {
             "column": "",
             "count": "20",
-            "filter[checkNotificado]": "false",
-            "filter[checkRegistrado]": "true",
-            "filter[prescricoes]": "536,537,538,539,27414,540",
-            "filter[situacaoRegistro]": "V",
-            "filter[tarjas]": "3,4",
+            "filter[situacaoRegistro]": "C,V",
             "order": "asc",
             "page": "1"
         }
+        self.max_retries = 3
 
     def get_url(self, page, params):
         p = params.copy()
         p["page"] = str(page)
         return f"{self.base_url}?{urllib.parse.urlencode(p)}"
 
-    def run(self):
-        print(f"Starting Bulk Code Extraction to {self.output_file}...", flush=True)
+    def run(self, on_count_callback=None):
+        logger.info(f"Starting Bulk Code Extraction to {self.output_file}...")
         
         all_codes = []
         page = 1
@@ -37,14 +37,14 @@ class BulkScraper:
         driver = WebDriverFactory.create_driver(headless=True)
         
         try:
-            print("Priming session...", flush=True)
+            logger.info("Priming session with Anvisa URL...")
             driver.get("https://consultas.anvisa.gov.br/")
             time.sleep(5) 
             
             while True:
                 # Session Renewal
                 if items_since_renew >= 1000:
-                    print(f"Renewing session after {items_since_renew} items...", flush=True)
+                    logger.info(f"Renewing session after {items_since_renew} items...")
                     driver.quit()
                     time.sleep(2)
                     driver = WebDriverFactory.create_driver(headless=True)
@@ -53,39 +53,62 @@ class BulkScraper:
                     items_since_renew = 0
                 
                 current_url = self.get_url(page, self.default_params)
-                print(f"Fetching page {page}...", flush=True)
                 
-                fetch_script = f"""
-                    var callback = arguments[arguments.length - 1];
-                    fetch('{current_url}', {{
-                        method: 'GET',
-                        headers: {{
-                            'Accept': 'application/json',
-                            'Authorization': 'Guest',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        }}
-                    }})
-                    .then(response => response.text())
-                    .then(text => callback(text))
-                    .catch(err => callback('ERROR: ' + err));
-                """
-                
-                content = driver.execute_async_script(fetch_script)
-                
-                if content.startswith("ERROR:"):
-                    print(f"Fetch failed on page {page}: {content}")
-                    break
+                # Fetch page with retry logic
+                content = None
+                for attempt in range(self.max_retries):
+                    try:
+                        logger.info(f"Fetching page {page} (Attempt {attempt + 1})...")
+                        fetch_script = f"""
+                            var callback = arguments[arguments.length - 1];
+                            fetch('{current_url}', {{
+                                method: 'GET',
+                                headers: {{
+                                    'Accept': 'application/json',
+                                    'Authorization': 'Guest',
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }}
+                            }})
+                            .then(response => {{
+                                if (!response.ok) throw new Error('HTTP Status ' + response.status);
+                                return response.text();
+                            }})
+                            .then(text => callback(text))
+                            .catch(err => callback('ERROR: ' + err.message));
+                        """
+                        
+                        content = driver.execute_async_script(fetch_script)
+                        
+                        if content.startswith("ERROR:"):
+                            raise Exception(content)
+                        
+                        # If we reached here, fetch was successful
+                        break
+                    except Exception as e:
+                        wait = (attempt + 1) * 2 + random.uniform(0.5, 1.5)
+                        logger.warning(f"Fetch failed on page {page}: {e}. Retrying in {wait:.1f}s...")
+                        if attempt < self.max_retries - 1:
+                            time.sleep(wait)
+                        else:
+                            logger.error(f"Max retries reached for page {page}. Aborting bulk extraction.")
+                            return len(all_codes)
 
                 try:
                     data = json.loads(content)
                     
                     if "error" in data:
-                        print(f"Stop: API Error: {data.get('error')}")
+                        logger.warning(f"Stop: API Error: {data.get('error')}")
                         break
                     
                     if total_elements is None:
                         total_elements = data.get("totalElements", 0)
-                        print(f"Total Elements: {total_elements}")
+                        logger.info(f"Total Elements to fetch: {total_elements}")
+                        
+                        if on_count_callback:
+                            if not on_count_callback(total_elements):
+                                logger.info("Extraction cancelled by user via callback.")
+                                return 0
+
                         if total_elements == 0:
                             break
 
@@ -94,8 +117,7 @@ class BulkScraper:
                         break
                     
                     for item in items:
-                        # Extract ONLY codigoProduto as requested
-                        prod_info = item.get("produto", {})
+                        prod_info = item.get("produto") or {}
                         code = prod_info.get("codigo")
                         if code:
                             all_codes.append({"codigoProduto": code})
@@ -104,7 +126,7 @@ class BulkScraper:
                     fetched_count += count
                     items_since_renew += count
                     
-                    print(f"Page {page} done. Total Codes: {len(all_codes)}/{total_elements}", flush=True)
+                    logger.info(f"Page {page} done. Total Codes Collected: {len(all_codes)}/{total_elements}")
                     
                     if fetched_count >= total_elements:
                         break
@@ -113,11 +135,11 @@ class BulkScraper:
                     time.sleep(random.uniform(1.0, 2.0))
                     
                 except json.JSONDecodeError:
-                    print(f"JSON Error on page {page}")
+                    logger.error(f"JSON Decode Error on page {page}")
                     break
                     
         except Exception as e:
-            print(f"Scraper crashed: {e}")
+            logger.exception(f"Scraper crashed unexpectedly: {e}")
             
         finally:
             if driver:
@@ -126,6 +148,6 @@ class BulkScraper:
             if all_codes:
                 with open(self.output_file, 'w', encoding='utf-8') as f:
                     json.dump(all_codes, f, indent=2, ensure_ascii=False)
-                print(f"Saved {len(all_codes)} codes to {self.output_file}")
+                logger.info(f"Saved {len(all_codes)} codes to {self.output_file}")
         
         return len(all_codes)

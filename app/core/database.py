@@ -1,21 +1,31 @@
 import sqlite3
 import json
-import os
 from datetime import datetime
+from app.core.logger import get_logger
+
+logger = get_logger("database")
 
 DB_NAME = "sngpc.db"
 
 class Database:
     @staticmethod
     def _get_connection():
-        return sqlite3.connect(DB_NAME)
+        # Optimization: increased timeout for concurrent access and WAL mode support
+        conn = sqlite3.connect(DB_NAME, timeout=30.0)
+        return conn
 
     @staticmethod
     def init_db():
+        logger.info(f"Initializing database: {DB_NAME}")
         conn = Database._get_connection()
         cursor = conn.cursor()
         
-        # Create table if not exists
+        # Optimization: Enable WAL (Write-Ahead Logging) mode
+        # This allows concurrent reads and writes without blocking
+        cursor.execute('PRAGMA journal_mode=WAL')
+        cursor.execute('PRAGMA synchronous=NORMAL')
+        
+        # Create table if not exists with optimized types
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS presentations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,8 +42,11 @@ class Database:
             )
         ''')
         
-        # Index for faster lookups
+        # Optimization: High-performance indices for search fields
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_codigo_produto ON presentations (codigo_produto)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_nome_lookup ON presentations (nome_comercial)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ativo_lookup ON presentations (principio_ativo)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_registro_lookup ON presentations (numero_registro)')
         
         conn.commit()
         conn.close()
@@ -46,9 +59,9 @@ class Database:
         try:
             cursor.execute('DELETE FROM presentations')
             conn.commit()
-            print("Database cleared.", flush=True)
+            logger.info("Database cleared.")
         except Exception as e:
-            print(f"Error clearing database: {e}")
+            logger.error(f"Error clearing database: {e}")
         finally:
             conn.close()
 
@@ -86,9 +99,6 @@ class Database:
                 
                 apresentacoes = root.get("apresentacoes", [])
                 
-                # If no presentations, insert a placeholder row? 
-                # Or just skip? The requirement implies we want the results.
-                # Let's insert a row with NULL/Empty presentation info if list is empty
                 if not apresentacoes:
                      cursor.execute('''
                         INSERT INTO presentations (
@@ -105,23 +115,13 @@ class Database:
                         embalagem_primaria = apt.get("embalagemPrimaria") or {}
                         embalagem = embalagem_primaria.get("descricao")
                         validade = apt.get("validade")
-                        
-                        # New fields
                         tarja = apt.get("tarja")
-                        
-                        # Root fields
                         principio_ativo = root.get("principioAtivo")
                         
                         classes = root.get("classesTerapeuticas", [])
                         classes_str = ", ".join(classes) if isinstance(classes, list) else str(classes)
-
-                        # New Mapping Logic per user request
-                        # 1. numero_registro comes from distinct presentation (13 digits)
-                        # 2. nome_comercial is concatenated with apresentacao
                         
                         registro_apresentacao = apt.get("registro")
-                        
-                        # Concatenate Name + Presentation
                         full_product_name = f"{nome_comercial} - {apresentacao}" if apresentacao else nome_comercial
 
                         cursor.execute('''
@@ -134,18 +134,17 @@ class Database:
             
             conn.commit()
         except Exception as e:
-            print(f"DB Error saving {code}: {e}")
+            logger.error(f"DB Error saving {code}: {e}")
         finally:
             conn.close()
 
     @staticmethod
     def get_presentations(page=1, size=10, search_query=None):
         conn = Database._get_connection()
-        conn.row_factory = sqlite3.Row # Access columns by name
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
         offset = (page - 1) * size
-        
         where_clause = ""
         params = []
         
@@ -171,7 +170,6 @@ class Database:
         
         rows = cursor.fetchall()
         result = [dict(row) for row in rows]
-        
         conn.close()
         return result
 

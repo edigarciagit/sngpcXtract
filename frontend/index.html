@@ -5,367 +5,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SNGPC Xtract // Terminal</title>
+
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
-    <style>
-        :root {
-            --bg: #FAFAFA;
-            --surface: #FFFFFF;
-            --border: #E5E5E5;
-            --text-primary: #111111;
-            --text-secondary: #737373;
-            --accent: #10B981;
-            /* Technical Green */
-            --error: #EF4444;
-            --font-main: 'Inter', sans-serif;
-            --font-mono: 'JetBrains Mono', monospace;
-            --ease: cubic-bezier(0.16, 1, 0.3, 1);
-        }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: var(--font-main);
-            background-color: var(--bg);
-            color: var(--text-primary);
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        /* --- Header --- */
-        .sidebar {
-            width: 280px;
-            background: var(--surface);
-            border-right: 1px solid var(--border);
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            z-index: 10;
-        }
-
-        .brand {
-            font-family: var(--font-mono);
-            font-weight: 600;
-            font-size: 14px;
-            letter-spacing: -0.02em;
-            margin-bottom: 48px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .brand::before {
-            content: '';
-            width: 12px;
-            height: 12px;
-            background: var(--text-primary);
-            display: block;
-        }
-
-        .controls {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        /* --- Main Content --- */
-        main {
-            flex: 1;
-            position: relative;
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* --- Status Bar --- */
-        .status-bar {
-            height: 64px;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            align-items: center;
-            padding: 0 32px;
-            background: var(--surface);
-            justify-content: space-between;
-        }
-
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-family: var(--font-mono);
-            font-size: 12px;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            background: var(--border);
-            border-radius: 50%;
-            transition: background 0.3s var(--ease);
-        }
-
-        .status-dot.active {
-            background: var(--accent);
-            box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
-        }
-
-        .status-dot.error {
-            background: var(--error);
-        }
-
-        /* --- Data Grid --- */
-        .data-container {
-            flex: 1;
-            overflow: auto;
-            position: relative;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-
-        thead {
-            position: sticky;
-            top: 0;
-            background: var(--bg);
-            z-index: 5;
-            font-family: var(--font-mono);
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-secondary);
-        }
-
-        th,
-        td {
-            text-align: left;
-            padding: 12px 32px;
-            border-bottom: 1px solid var(--border);
-            height: 48px;
-        }
-
-        /* Specific Col Widths */
-        th:nth-child(1) {
-            width: 120px;
-        }
-
-        /* Código */
-
-        tr {
-            transition: background 0.1s;
-            cursor: default;
-        }
-
-        tbody tr:hover {
-            background: #F3F3F3;
-        }
-
-        /* --- Components --- */
-        .btn {
-            background: var(--text-primary);
-            color: var(--surface);
-            border: none;
-            padding: 16px;
-            font-family: var(--font-mono);
-            font-size: 12px;
-            text-transform: uppercase;
-            cursor: pointer;
-            transition: all 0.2s var(--ease);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-        .btn:disabled {
-            background: var(--border);
-            color: var(--text-secondary);
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-
-        .progress-module {
-            margin-top: auto;
-        }
-
-        .progress-track {
-            height: 2px;
-            background: var(--border);
-            width: 100%;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: var(--text-primary);
-            width: 0%;
-            transition: width 0.5s var(--ease);
-        }
-
-        .metric-big {
-            font-size: 48px;
-            font-weight: 300;
-            letter-spacing: -0.03em;
-            margin-bottom: 8px;
-        }
-
-        .metric-label {
-            font-family: var(--font-mono);
-            font-size: 11px;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-        }
-
-        /* --- Layout Grid --- */
-        .layout {
-            display: flex;
-            height: 100%;
-        }
-
-        /* Animation */
-        @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        tbody tr {
-            animation: slideUp 0.3s var(--ease) forwards;
-            opacity: 0;
-        }
-
-        /* Stagger Loop generated by JS or just simple CSS for first few */
-        tbody tr:nth-child(1) {
-            animation-delay: 0.05s;
-        }
-
-        tbody tr:nth-child(2) {
-            animation-delay: 0.1s;
-        }
-
-        tbody tr:nth-child(3) {
-            animation-delay: 0.15s;
-        }
-
-        tbody tr:nth-child(4) {
-            animation-delay: 0.2s;
-        }
-
-        tbody tr:nth-child(5) {
-            animation-delay: 0.25s;
-        }
-
-        /* Pagination */
-        .pagination {
-            position: absolute;
-            bottom: 24px;
-            right: 32px;
-            display: flex;
-            gap: 8px;
-            background: var(--surface);
-            padding: 8px;
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            /* Slight round for UI controls */
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-        }
-
-        .page-btn {
-            width: 32px;
-            height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid transparent;
-            background: transparent;
-            font-family: var(--font-mono);
-            font-size: 11px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .page-btn:hover {
-            background: var(--bg);
-        }
-
-        .page-btn.active {
-            background: var(--text-primary);
-            color: var(--surface);
-        }
-
-        /* Empty State */
-        .empty-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            color: var(--text-secondary);
-        }
-
-        /* --- Badges --- */
-        .badge {
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            display: inline-block;
-        }
-
-        .badge-red {
-            background-color: #EF4444;
-            /* Red */
-            color: #FFFFFF;
-        }
-
-        .badge-black {
-            background-color: #111111;
-            /* Black */
-            color: #FFFFFF;
-            border: 1px solid #333;
-        }
-
-        .badge-yellow {
-            background-color: #F59E0B;
-            /* Amber/Yellow */
-            color: #111111;
-        }
-
-        .badge-default {
-            background-color: var(--border);
-            color: var(--text-secondary);
-        }
-    </style>
+    <!-- Styles -->
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 
 <body>
@@ -385,8 +34,9 @@
                         <input type="checkbox" id="reuse-flag"
                             style="accent-color: var(--text-primary); cursor: pointer;">
                         <label for="reuse-flag"
-                            style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); cursor: pointer;">REUTILIZAR
-                            DADOS EXISTENTES</label>
+                            style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); cursor: pointer;">
+                            REUTILIZAR DADOS EXISTENTES
+                        </label>
                     </div>
 
                     <button id="start-btn" class="btn" onclick="startExtraction()">
@@ -426,201 +76,42 @@
             </div>
 
             <div class="data-container">
-                <table id="results-table">
-                    <thead>
-                        <tr>
-                            <th>CÓDIGO</th>
-                            <th>PRODUTO</th>
-                            <th>REGISTRO MS</th>
-                            <th>TARJA</th>
-                            <th>PRINCIPIO ATIVO</th>
-                            <th>CLASSES TERAPÊUTICAS</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <!-- Rows injected here -->
-                    </tbody>
-                </table>
+                <div style="flex: 1; overflow: auto;">
+                    <table id="results-table">
+                        <thead>
+                            <tr>
+                                <th>CÓDIGO</th>
+                                <th>PRODUTO</th>
+                                <th>REGISTRO MS</th>
+                                <th>TARJA</th>
+                                <th>PRINCIPIO ATIVO</th>
+                                <th>CLASSES TERAPÊUTICAS</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Rows injected here by JavaScript -->
+                        </tbody>
+                    </table>
 
-                <div id="empty-state" class="empty-state">
-                    <p style="font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.05em;">NENHUM DADO
-                        CARREGADO NO BUFFER</p>
+                    <div id="empty-state" class="empty-state">
+                        <p style="font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.05em;">
+                            NENHUM DADO CARREGADO NO BUFFER
+                        </p>
+                    </div>
                 </div>
+
+                <div id="pagination" class="pagination" style="display:none;"></div>
             </div>
 
-            <div id="pagination" class="pagination" style="display:none;"></div>
+            <!-- Terminal Footer -->
+            <div id="terminal" class="log-terminal">
+                <div class="log-line">Initializing console stream...</div>
+            </div>
         </main>
     </div>
 
-    <script>
-        let pollInterval;
-        let currentPage = 1;
-        const pageSize = 50;
-        let searchTimeout;
-
-        // --- Search Logic ---
-        document.getElementById('search-input').addEventListener('input', (e) => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                loadResults(1);
-            }, 400);
-        });
-
-        // --- Core Logic ---
-        async function startExtraction() {
-            setLoading(true);
-            const reuse = document.getElementById('reuse-flag').checked;
-            try {
-                const res = await fetch('/api/extract', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ reuse: reuse })
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    pollInterval = setInterval(checkProgress, 4000);
-                } else {
-                    alert("Erro ao iniciar: " + data.message);
-                    setLoading(false);
-                }
-            } catch (e) {
-                console.error(e);
-                setLoading(false);
-            }
-        }
-
-        async function checkProgress() {
-            try {
-                const res = await fetch('/api/progress');
-                const status = await res.json();
-
-                updateUI(status);
-
-                if (status.state === 'COMPLETED') {
-                    clearInterval(pollInterval);
-                    setLoading(false);
-                    loadResults(1);
-                } else if (status.state === 'ERROR') {
-                    clearInterval(pollInterval);
-                    setLoading(false);
-                }
-            } catch (e) {
-                console.error("Poll Error", e);
-            }
-        }
-
-        // --- UI Updates ---
-        function updateUI(status) {
-            document.getElementById('progress-fill').style.width = status.percent + '%';
-            document.getElementById('percent-display').textContent = status.percent + '%';
-
-            // Format status message
-            let msg = status.message;
-            if (msg.length > 30) msg = msg.substring(0, 27) + '...';
-            document.getElementById('status-text').textContent = `[${status.state}] ${msg}`;
-        }
-
-        function setLoading(isLoading) {
-            const btn = document.getElementById('start-btn');
-            btn.disabled = isLoading;
-            btn.innerHTML = isLoading ? '<span>PROCESSANDO...</span>' : '<span>INICIAR PROCESSO</span>';
-        }
-
-        async function loadResults(page) {
-            currentPage = page;
-            const tbody = document.querySelector('#results-table tbody');
-            const empty = document.getElementById('empty-state');
-
-            // Show loading state
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary); padding: 32px;">CARREGANDO DADOS...</td></tr>';
-            empty.style.display = 'none';
-
-            const searchQuery = document.getElementById('search-input').value;
-            const url = searchQuery
-                ? `/api/results?page=${page}&size=${pageSize}&q=${encodeURIComponent(searchQuery)}`
-                : `/api/results?page=${page}&size=${pageSize}`;
-
-            try {
-                const res = await fetch(url);
-                const data = await res.json();
-
-                if (data.totalElements > 0) {
-                    empty.style.display = 'none';
-                    document.getElementById('pagination').style.display = 'flex';
-                    document.getElementById('total-badge').textContent = data.totalElements;
-
-                    // Render
-                    tbody.innerHTML = data.content.map((item, index) => `
-                        <tr style="animation-delay: ${index * 0.05}s">
-                            <td style="font-family: var(--font-mono); color: var(--text-secondary);">${item.codigo_produto || '--'}</td>
-                            <td style="font-weight: 500;">${item.nome_comercial || '--'}</td>
-                            <td style="font-family: var(--font-mono); font-size: 11px;">${item.numero_registro || '--'}</td>
-                            <td>${renderTarja(item.tarja)}</td>
-                            <td style="font-size: 11px; text-transform: uppercase;">${item.principio_ativo || '--'}</td>
-                            <td>${item.classes_terapeuticas || '--'}</td>
-                        </tr>
-                    `).join('');
-
-                    renderPagination(data.totalPages, page);
-                } else {
-                    tbody.innerHTML = '';
-                    empty.style.display = 'flex';
-                }
-
-            } catch (e) {
-                console.error(e);
-            }
-        }
-
-        function renderPagination(totalPages, current) {
-            const container = document.getElementById('pagination');
-            container.innerHTML = '';
-
-            if (totalPages <= 1) return;
-
-            let pages = [];
-            if (totalPages <= 7) {
-                for (let i = 1; i <= totalPages; i++) pages.push(i);
-            } else {
-                if (current < 5) pages = [1, 2, 3, 4, 5, '...', totalPages];
-                else if (current > totalPages - 4) pages = [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
-                else pages = [1, '...', current - 1, current, current + 1, '...', totalPages];
-            }
-
-            pages.forEach(p => {
-                const btn = document.createElement('button');
-                btn.className = `page-btn ${p === current ? 'active' : ''}`;
-                btn.textContent = p;
-                if (p !== '...') {
-                    btn.onclick = () => loadResults(p);
-                }
-                container.appendChild(btn);
-            });
-        }
-
-
-
-        function renderTarja(tarja) {
-            if (!tarja) return '<span class="badge badge-default">--</span>';
-
-            const t = tarja.toLowerCase();
-            if (t.includes('vermelha')) {
-                return `<span class="badge badge-red">${tarja}</span>`;
-            } else if (t.includes('preta')) {
-                return `<span class="badge badge-black">${tarja}</span>`;
-            } else {
-                return `<span class="badge badge-yellow">${tarja}</span>`;
-            }
-        }
-
-        function exportData() {
-            window.location.href = '/api/export';
-        }
-
-        // Initial Check
-        loadResults(1);
-    </script>
+    <!-- Scripts -->
+    <script src="js/app.js"></script>
 </body>
 
 </html>
