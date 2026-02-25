@@ -13,12 +13,12 @@ class BulkScraper:
         self.base_url = "https://consultas.anvisa.gov.br/api/consulta/medicamento/produtos/"
         self.default_params = {
             "column": "",
-            "count": "20",
-            "filter[situacaoRegistro]": "C,V",
+            "count": "100",
+            "filter[situacaoRegistro]": "V",
             "order": "asc",
             "page": "1"
         }
-        self.max_retries = 3
+        self.max_retries = 5
 
     def get_url(self, page, params):
         p = params.copy()
@@ -61,8 +61,12 @@ class BulkScraper:
                         logger.info(f"Fetching page {page} (Attempt {attempt + 1})...")
                         fetch_script = f"""
                             var callback = arguments[arguments.length - 1];
+                            const controller = new AbortController();
+                            const timeoutId = setTimeout(() => controller.abort(), 45000);
+
                             fetch('{current_url}', {{
                                 method: 'GET',
+                                signal: controller.signal,
                                 headers: {{
                                     'Accept': 'application/json',
                                     'Authorization': 'Guest',
@@ -70,11 +74,18 @@ class BulkScraper:
                                 }}
                             }})
                             .then(response => {{
+                                clearTimeout(timeoutId);
                                 if (!response.ok) throw new Error('HTTP Status ' + response.status);
                                 return response.text();
                             }})
-                            .then(text => callback(text))
-                            .catch(err => callback('ERROR: ' + err.message));
+                            .then(text => {{
+                                if (!text || text.trim().length === 0) throw new Error('Empty response');
+                                callback(text);
+                            }})
+                            .catch(err => {{
+                                clearTimeout(timeoutId);
+                                callback('ERROR: ' + err.message);
+                            }});
                         """
                         
                         content = driver.execute_async_script(fetch_script)
@@ -119,8 +130,20 @@ class BulkScraper:
                     for item in items:
                         prod_info = item.get("produto") or {}
                         code = prod_info.get("codigo")
-                        if code:
-                            all_codes.append({"codigoProduto": code})
+                        
+                        # ADVANCED FILTERING: Skip 'NOTIFICADO' items and ghost records
+                        # 'NOTIFICADO' products often lack the detailed data structure required for Phase 2
+                        tipo = prod_info.get("tipoAutorizacao")
+                        situacao = prod_info.get("situacaoApresentacao")
+                        acancelar = prod_info.get("acancelar")
+                        
+                        if tipo == "REGISTRADO" and situacao == "Ativo" and not acancelar:
+                            if code:
+                                all_codes.append({"codigoProduto": code})
+                        else:
+                            # Log first few skips for confirmation
+                            if len(all_codes) < 3:
+                                logger.info(f"Skipped item {code} - Type: {tipo}, Status: {situacao}, CancelFlag: {acancelar}")
                     
                     count = len(items)
                     fetched_count += count

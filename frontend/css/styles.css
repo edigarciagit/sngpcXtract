@@ -145,14 +145,54 @@ thead {
     color: var(--text-secondary);
 }
 
-th, td {
+th,
+td {
     text-align: left;
-    padding: 12px 32px;
+    padding: 12px 24px;
     border-bottom: 1px solid var(--border);
-    height: 48px;
+    min-height: 64px;
 }
 
-th:nth-child(1) { width: 120px; }
+/* Specific Column Widths */
+th:nth-child(1),
+td:nth-child(1) {
+    width: 40px;
+}
+
+/* # */
+th:nth-child(2),
+td:nth-child(2) {
+    width: 140px;
+}
+
+/* MS */
+th:nth-child(3),
+td:nth-child(3) {
+    width: 140px;
+}
+
+/* SKU */
+th:nth-child(4),
+td:nth-child(4) {
+    width: 30%;
+}
+
+/* Med/DCB */
+th:nth-child(5),
+td:nth-child(5) {
+    width: 30%;
+}
+
+/* Apr/Lab */
+th:nth-child(6),
+td:nth-child(6) {
+    width: 100px;
+    text-align: center;
+}
+
+/* Lista */
+
+/* Status */
 
 tr {
     transition: background 0.1s;
@@ -281,14 +321,30 @@ tbody tr:hover {
     display: inline-block;
 }
 
-.badge-red { background-color: #EF4444; color: #FFFFFF; }
-.badge-black { background-color: #111111; color: #FFFFFF; border: 1px solid #333; }
-.badge-yellow { background-color: #F59E0B; color: #111111; }
-.badge-default { background-color: var(--border); color: var(--text-secondary); }
+.badge-red {
+    background-color: #EF4444;
+    color: #FFFFFF;
+}
+
+.badge-black {
+    background-color: #111111;
+    color: #FFFFFF;
+    border: 1px solid #333;
+}
+
+.badge-yellow {
+    background-color: #F59E0B;
+    color: #111111;
+}
+
+.badge-default {
+    background-color: var(--border);
+    color: var(--text-secondary);
+}
 
 /* --- Log Terminal --- */
 .log-terminal {
-    height: 200px;
+    height: 100px;
     background: #0D0D0D;
     border-top: 1px solid var(--border);
     color: #A3A3A3;
@@ -307,11 +363,25 @@ tbody tr:hover {
     word-break: break-all;
 }
 
-.log-line .timestamp { color: #525252; }
-.log-line .level-info { color: #10B981; }
-.log-line .level-warning { color: #F59E0B; }
-.log-line .level-error { color: #EF4444; }
-.log-line .message { color: #E5E5E5; }
+.log-line .timestamp {
+    color: #525252;
+}
+
+.log-line .level-info {
+    color: #10B981;
+}
+
+.log-line .level-warning {
+    color: #F59E0B;
+}
+
+.log-line .level-error {
+    color: #EF4444;
+}
+
+.log-line .message {
+    color: #E5E5E5;
+}
 
 /* Animation */
 @keyframes slideUp {
@@ -319,6 +389,7 @@ tbody tr:hover {
         opacity: 0;
         transform: translateY(10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -328,4 +399,69 @@ tbody tr:hover {
 tbody tr {
     animation: slideUp 0.3s var(--ease) forwards;
     opacity: 0;
+}
+
+/* --- Modal --- */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    animation: fadeIn 0.2s var(--ease);
+}
+
+.modal-content {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    width: 480px;
+    padding: 32px;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
+    animation: slideUp 0.3s var(--ease);
+}
+
+.modal-header {
+    margin-bottom: 24px;
+}
+
+.modal-header .brand {
+    margin-bottom: 0px;
+}
+
+.modal-body {
+    margin-bottom: 32px;
+}
+
+.modal-body p {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.btn-secondary {
+    background: var(--surface) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border) !important;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }

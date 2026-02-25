@@ -24,6 +24,8 @@ class Database:
         # This allows concurrent reads and writes without blocking
         cursor.execute('PRAGMA journal_mode=WAL')
         cursor.execute('PRAGMA synchronous=NORMAL')
+        cursor.execute('PRAGMA cache_size=-10000') # 10MB cache
+        cursor.execute('PRAGMA temp_store=MEMORY')
         
         # Create table if not exists with optimized types
         cursor.execute('''
@@ -38,6 +40,8 @@ class Database:
                 tarja TEXT,
                 principio_ativo TEXT,
                 classes_terapeuticas TEXT,
+                fabricante TEXT,
+                lista_controle TEXT,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -47,6 +51,7 @@ class Database:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_nome_lookup ON presentations (nome_comercial)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ativo_lookup ON presentations (principio_ativo)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_registro_lookup ON presentations (numero_registro)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_fabricante_lookup ON presentations (fabricante)')
         
         conn.commit()
         conn.close()
@@ -66,75 +71,94 @@ class Database:
             conn.close()
 
     @staticmethod
+    def _parse_product_data(code, data):
+        """Helper to extract rows from product JSON."""
+        rows = []
+        if not data: return rows
+
+        # Handle list or dict root
+        if isinstance(data, list):
+            root_objs = data
+        else:
+            content = data.get("content", []) if "content" in data else [data]
+            root_objs = content
+
+        for root in root_objs:
+            if not root: continue
+
+            prod_data = root.get("produto") or {}
+            codigo_produto = prod_data.get("codigo") or root.get("codigoProduto") or code
+            nome_comercial = prod_data.get("nome") or root.get("nomeComercial")
+            numero_registro = prod_data.get("numeroRegistro") or root.get("numeroRegistro")
+            
+            apresentacoes = root.get("apresentacoes", [])
+            empresa_obj = root.get("empresa") or (root.get("produto") or {}).get("empresa") or {}
+            fabricante = empresa_obj.get("razaoSocial") or empresa_obj.get("nomeFantasia") or "N/A"
+            principio_ativo = root.get("principioAtivo") or (root.get("produto") or {}).get("principioAtivo") or "N/A"
+
+            if not apresentacoes:
+                rows.append((codigo_produto, nome_comercial, numero_registro, "N/A", "N/A", "N/A", "N/A", principio_ativo, "", fabricante, "N/A"))
+            else:
+                for apt in apresentacoes:
+                    if not apt: continue
+                    apresentacao = apt.get("descricao") or apt.get("nome") or apt.get("apresentacao")
+                    embalagem_primaria = apt.get("embalagemPrimaria") or {}
+                    embalagem = embalagem_primaria.get("descricao")
+                    validade = apt.get("validade")
+                    tarja = apt.get("tarja")
+                    
+                    classes = root.get("classesTerapeuticas", [])
+                    classes_str = ", ".join(classes) if isinstance(classes, list) else str(classes)
+                    
+                    lista = "N/A"
+                    for c in (classes if isinstance(classes, list) else [str(classes)]):
+                        if "portaria 344" in c.lower() or "lista" in c.lower():
+                            symbols = ["A1", "A2", "A3", "B1", "B2", "C1", "C2", "C3", "C4", "C5"]
+                            for s in symbols:
+                                if s in c:
+                                    lista = s
+                                    break
+                    
+                    rows.append((codigo_produto, nome_comercial, apt.get("registro"), apresentacao, embalagem, validade, tarja, principio_ativo, classes_str, fabricante, lista))
+        return rows
+
+    @staticmethod
     def save_product(code, data):
+        """Saves a single product's data."""
+        Database.save_products_batch([(code, data)])
+
+    @staticmethod
+    def save_products_batch(product_list):
         """
-        Parses the product JSON and inserts flattened presentation rows.
-        Deletes existing entries for this product code first to avoid duplicates on re-run.
+        Saves multiple products in a single transaction.
+        product_list: list of (code, data) tuples
         """
-        if not data or not isinstance(data, (dict, list)):
+        if not product_list:
             return
 
         conn = Database._get_connection()
         cursor = conn.cursor()
-
         try:
-            # Delete existing for this product to allow updates
-            cursor.execute('DELETE FROM presentations WHERE codigo_produto = ?', (code,))
-
-            # Handle list or dict root
-            if isinstance(data, list):
-                root_objs = data
-            else:
-                content = data.get("content", []) if "content" in data else [data]
-                root_objs = content
-
-            for root in root_objs:
-                if not root:
-                    continue
-
-                prod_data = root.get("produto") or {}
-                codigo_produto = prod_data.get("codigo") or root.get("codigoProduto") or code
-                nome_comercial = prod_data.get("nome") or root.get("nomeComercial")
-                numero_registro = prod_data.get("numeroRegistro") or root.get("numeroRegistro")
+            for code, data in product_list:
+                if not data: continue
+                # Delete existing to avoid dups
+                cursor.execute('DELETE FROM presentations WHERE codigo_produto = ?', (code,))
                 
-                apresentacoes = root.get("apresentacoes", [])
-                
-                if not apresentacoes:
-                     cursor.execute('''
+                rows = Database._parse_product_data(code, data)
+                if rows:
+                    cursor.executemany('''
                         INSERT INTO presentations (
                             codigo_produto, nome_comercial, numero_registro, 
-                            apresentacao, embalagem, validade
-                        ) VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (codigo_produto, nome_comercial, numero_registro, "N/A", "N/A", "N/A"))
-                else:
-                    for apt in apresentacoes:
-                        if not apt: 
-                            continue
-                            
-                        apresentacao = apt.get("descricao") or apt.get("nome") or apt.get("apresentacao")
-                        embalagem_primaria = apt.get("embalagemPrimaria") or {}
-                        embalagem = embalagem_primaria.get("descricao")
-                        validade = apt.get("validade")
-                        tarja = apt.get("tarja")
-                        principio_ativo = root.get("principioAtivo")
-                        
-                        classes = root.get("classesTerapeuticas", [])
-                        classes_str = ", ".join(classes) if isinstance(classes, list) else str(classes)
-                        
-                        registro_apresentacao = apt.get("registro")
-                        full_product_name = f"{nome_comercial} - {apresentacao}" if apresentacao else nome_comercial
-
-                        cursor.execute('''
-                            INSERT INTO presentations (
-                                codigo_produto, nome_comercial, numero_registro, 
-                                apresentacao, embalagem, validade,
-                                tarja, principio_ativo, classes_terapeuticas
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (codigo_produto, full_product_name, registro_apresentacao, apresentacao, embalagem, validade, tarja, principio_ativo, classes_str))
+                            apresentacao, embalagem, validade,
+                            tarja, principio_ativo, classes_terapeuticas,
+                            fabricante, lista_controle
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', rows)
             
             conn.commit()
         except Exception as e:
-            logger.error(f"DB Error saving {code}: {e}")
+            logger.error(f"Batch DB Error: {e}")
+            conn.rollback()
         finally:
             conn.close()
 

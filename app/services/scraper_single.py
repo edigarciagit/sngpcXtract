@@ -23,26 +23,53 @@ class SingleScraper:
         url_map = {code: self.api_url_template.format(code) for code in codes}
         urls_json = json.dumps(list(url_map.values()))
         
-        # Injected JS to fetch all concurrently
+        # Injected JS to fetch all concurrently with internal retry logic
         batch_fetch_script = f"""
             var callback = arguments[arguments.length - 1];
             var urls = {urls_json};
             
-            Promise.all(urls.map(url => 
-                fetch(url, {{
-                    method: 'GET',
-                    headers: {{
-                        'Accept': 'application/json',
-                        'Authorization': 'Guest',
-                        'X-Requested-With': 'XMLHttpRequest'
+            async function fetchWithRetry(url, retries = 3) {{
+                for (let i = 0; i <= retries; i++) {{
+                    try {{
+                        const response = await fetch(url, {{
+                            method: 'GET',
+                            headers: {{
+                                'Accept': 'application/json',
+                                'Authorization': 'Guest',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }}
+                        }});
+                        
+                        if (!response.ok) throw new Error('HTTP ' + response.status);
+                        
+                        const text = await response.text();
+                        if (!text || text.trim().length === 0) throw new Error('Empty response');
+                        
+                        // Check if we got HTML instead of JSON (common when blocked/redirected)
+                        if (text.trim().startsWith('<')) throw new Error('Received HTML instead of JSON (Possible block)');
+                        
+                        try {{
+                            const data = JSON.parse(text);
+                            return {{ url: url, status: 'SUCCESS', data: data }};
+                        }} catch (e) {{
+                            throw new Error('Malformed JSON: ' + e.message + ' (Snippet: ' + text.substring(0, 50) + '...)');
+                        }}
+                    }} catch (err) {{
+                        if (i === retries) return {{ url: url, status: 'ERROR', message: err.toString() }};
+                        
+                        // Smart Pause: Wait MUCH longer if it was an empty response (likely rate limit)
+                        const isRateLimit = err.toString().includes('Empty response');
+                        const baseWait = isRateLimit ? 3000 : 1500;
+                        const waitTime = (i + 1) * baseWait + Math.random() * 2000;
+                        
+                        await new Promise(r => setTimeout(r, waitTime));
                     }}
-                }})
-                .then(r => r.ok ? r.text() : Promise.reject('HTTP ' + r.status))
-                .then(text => ({{ url: url, status: 'SUCCESS', data: JSON.parse(text) }}))
-                .catch(err => ({{ url: url, status: 'ERROR', message: err.toString() }}))
-            ))
-            .then(results => callback(results))
-            .catch(err => callback('GLOBAL_ERROR: ' + err));
+                }}
+            }}
+
+            Promise.all(urls.map(url => fetchWithRetry(url)))
+                .then(results => callback(results))
+                .catch(err => callback('GLOBAL_ERROR: ' + err));
         """
 
         try:

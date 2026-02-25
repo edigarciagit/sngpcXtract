@@ -45,6 +45,8 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_extract()
         elif self.path == '/api/confirm':
             self.handle_confirm()
+        elif self.path == '/api/stop':
+            self.handle_stop()
         else:
             self.send_error(404, "Not Found")
 
@@ -86,6 +88,15 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps({"success": success, "message": msg}).encode('utf-8'))
+
+    def handle_stop(self):
+        orchestrator = ExtractionOrchestrator()
+        orchestrator.stop()
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"success": True, "message": "Stop signal sent."}).encode('utf-8'))
 
     def handle_progress(self):
         orchestrator = ExtractionOrchestrator()
@@ -139,21 +150,22 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
             
             # Headers
-            headers = ["ID", "Código Produto", "Nome Comercial", "Registro MS", "Apresentação", "Embalagem", "Validade", "Tarja", "Princípio Ativo", "Classes Terapêuticas", "Atualizado Em"]
+            headers = ["ID", "MS", "SKU (Código)", "Medicamento", "DCB (Princípio Ativo)", "Apresentação", "Fabricante", "Lista Controle", "Embalagem", "Validade", "Tarja", "Atualizado Em"]
             writer.writerow(headers)
             
             for row in data:
                 writer.writerow([
                     row.get("id"),
+                    row.get("numero_registro"),
                     row.get("codigo_produto"),
                     row.get("nome_comercial"),
-                    row.get("numero_registro"),
+                    row.get("principio_ativo"),
                     row.get("apresentacao"),
+                    row.get("fabricante"),
+                    row.get("lista_controle"),
                     row.get("embalagem"),
                     row.get("validade"),
                     row.get("tarja"),
-                    row.get("principio_ativo"),
-                    row.get("classes_terapeuticas"),
                     row.get("updated_at")
                 ])
                 

@@ -19,5 +19,10 @@ class WebDriverFactory:
         
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
+        
+        # Increased timeouts to avoid 'script timeout' errors
+        driver.set_script_timeout(60)
+        driver.set_page_load_timeout(60)
+        
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver

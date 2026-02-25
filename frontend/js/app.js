@@ -16,6 +16,7 @@ document.getElementById('search-input').addEventListener('input', (e) => {
 // --- Core Logic ---
 async function startExtraction() {
     setLoading(true);
+    isConfirming = false; // Reset lock for new run
     const reuse = document.getElementById('reuse-flag').checked;
     try {
         const res = await fetch('/api/extract', {
@@ -46,26 +47,9 @@ async function checkProgress() {
 
         if (status.state === 'AWAITING_CONFIRMATION' && !isConfirming) {
             isConfirming = true;
-            setTimeout(async () => {
-                const count = status.total || 0;
-                const proceed = confirm(`Foram encontrados ${count} produtos. Deseja prosseguir com a extração total?`);
-
-                try {
-                    await fetch('/api/confirm', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ proceed: proceed })
-                    });
-                } catch (e) {
-                    console.error("Confirmation Error", e);
-                }
-
-                isConfirming = false;
-                if (!proceed) {
-                    clearInterval(pollInterval);
-                    setLoading(false);
-                }
-            }, 100);
+            const count = status.total || 0;
+            document.getElementById('modal-message').textContent = `Foram encontrados ${count} produtos. Deseja prosseguir com a extração total?`;
+            document.getElementById('confirm-modal').style.display = 'flex';
         }
 
         if (status.state === 'COMPLETED') {
@@ -134,6 +118,10 @@ function updateUI(status) {
     document.getElementById('progress-fill').style.width = status.percent + '%';
     document.getElementById('percent-display').textContent = status.percent + '%';
 
+    if (status.elapsedTime) {
+        document.getElementById('timer-display').textContent = status.elapsedTime;
+    }
+
     let msg = status.message;
     if (msg.length > 30) msg = msg.substring(0, 27) + '...';
     document.getElementById('status-text').textContent = `[${status.state}] ${msg}`;
@@ -141,8 +129,12 @@ function updateUI(status) {
 
 function setLoading(isLoading) {
     const btn = document.getElementById('start-btn');
+    const abortBtn = document.getElementById('abort-btn');
     btn.disabled = isLoading;
     btn.innerHTML = isLoading ? '<span>PROCESSANDO...</span>' : '<span>INICIAR PROCESSO</span>';
+
+    // Toggle abort button
+    abortBtn.style.display = isLoading ? 'flex' : 'none';
 }
 
 async function loadResults(page) {
@@ -167,14 +159,26 @@ async function loadResults(page) {
             document.getElementById('pagination').style.display = 'flex';
             document.getElementById('total-badge').textContent = data.totalElements;
 
+            const pBadge = document.getElementById('pending-badge');
+            pBadge.style.display = 'block';
+            pBadge.textContent = `${data.totalElements} PRODUTOS NO BUFFER`;
+
             tbody.innerHTML = data.content.map((item, index) => `
                 <tr style="animation-delay: ${index * 0.05}s">
-                    <td style="font-family: var(--font-mono); color: var(--text-secondary);">${item.codigo_produto || '--'}</td>
-                    <td style="font-weight: 500;">${item.nome_comercial || '--'}</td>
-                    <td style="font-family: var(--font-mono); font-size: 11px;">${item.numero_registro || '--'}</td>
-                    <td>${renderTarja(item.tarja)}</td>
-                    <td style="font-size: 11px; text-transform: uppercase;">${item.principio_ativo || '--'}</td>
-                    <td>${item.classes_terapeuticas || '--'}</td>
+                    <td style="color: var(--text-secondary); font-size: 11px;">${index + 1 + (page - 1) * pageSize}</td>
+                    <td style="font-family: var(--font-mono); font-size: 12px; color: var(--text-primary);">${item.numero_registro || '--'}</td>
+                    <td style="font-family: var(--font-mono); font-size: 12px;">${item.codigo_produto || '--'}</td>
+                    <td>
+                        <div style="font-weight: 600; text-transform: uppercase;">${item.nome_comercial || '--'}</div>
+                        <div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase; margin-top: 2px;">${item.principio_ativo || '--'}</div>
+                    </td>
+                    <td>
+                        <div style="font-size: 11px;">${item.apresentacao || '--'}</div>
+                        <div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase; margin-top: 2px;">${item.fabricante || '--'}</div>
+                    </td>
+                    <td style="text-align:center;">
+                        <span class="badge ${item.lista_controle !== 'N/A' ? 'badge-black' : 'badge-default'}">${item.lista_controle || '--'}</span>
+                    </td>
                 </tr>
             `).join('');
 
@@ -230,6 +234,40 @@ function renderTarja(tarja) {
 
 function exportData() {
     window.location.href = '/api/export';
+}
+
+async function confirmExtraction(proceed) {
+    document.getElementById('confirm-modal').style.display = 'none';
+
+    try {
+        await fetch('/api/confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ proceed: proceed })
+        });
+    } catch (e) {
+        console.error("Confirmation Error", e);
+    }
+
+    if (!proceed) {
+        clearInterval(pollInterval);
+        setLoading(false);
+        isConfirming = false; // Allow re-confirming if they start again
+    }
+}
+
+async function abortExtraction() {
+    if (!confirm("Tem certeza que deseja abortar a extração atual?")) return;
+
+    try {
+        await fetch('/api/stop', { method: 'POST' });
+        clearInterval(pollInterval);
+        setLoading(false);
+        isConfirming = false;
+        document.getElementById('status-text').textContent = "[IDLE] Processo abortado pelo usuário.";
+    } catch (e) {
+        console.error("Abort Error", e);
+    }
 }
 
 // Initial Bootstrap
