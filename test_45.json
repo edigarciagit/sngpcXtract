@@ -1,0 +1,237 @@
+{
+  "acondicionamentos": [],
+  "anexoRotulos": [],
+  "apresentacoes": [
+    {
+      "acessorios": [],
+      "acondicionamento": null,
+      "apresentacao": "250 MG COM REV  CT BL AL PLAS TRANS X 20",
+      "apresentacaoFracionada": "N",
+      "ativa": true,
+      "codigo": 116,
+      "complemento": null,
+      "conservacao": [
+        "CONSERVAR EM  TEMPERATURA AMBIENTE ( AMBIENTE COM TEMPERATURA ENTRE 15 E 30ºC)",
+        "PROTEGER DA LUZ E UMIDADE"
+      ],
+      "dataPublicacao": "2002-01-21T00:00:00.000-0200",
+      "dataVencimentoRegistro": null,
+      "destinacao": [
+        "Comercial"
+      ],
+      "emAnalise": false,
+      "embalagemPrimaria": null,
+      "embalagemPrimariaTodas": [
+        {
+          "observacao": null,
+          "tipo": "BLISTER DE ALUMINIO/PLASTICO TRANSPARENTE"
+        }
+      ],
+      "embalagemSecundaria": {
+        "observacao": null,
+        "tipo": "CARTUCHO DE CARTOLINA"
+      },
+      "embalagemSecundariaTodas": [
+        {
+          "observacao": null,
+          "tipo": "CARTUCHO DE CARTOLINA"
+        }
+      ],
+      "envoltorios": [],
+      "fabricantesInternacionais": [],
+      "fabricantesNacionais": [
+        {
+          "cidade": "JANDIRA",
+          "cnpj": "49475833001412",
+          "etapaFabricacao": "Processo produtivo completo ",
+          "fabricante": "BIOLAB SANUS FARMACÊUTICA LTDA",
+          "pais": "BRASIL",
+          "uf": "SP"
+        },
+        {
+          "cidade": "TABOÃO DA SERRA",
+          "cnpj": "49475833000106",
+          "etapaFabricacao": "Processo produtivo completo ",
+          "fabricante": "BIOLAB SANUS FARMACÊUTICA LTDA",
+          "pais": "BRASIL",
+          "uf": "SP"
+        },
+        {
+          "cidade": "BRAGANÇA PAULISTA",
+          "cnpj": "49475833001846",
+          "etapaFabricacao": "Embalagem secundária",
+          "fabricante": "BIOLAB SANUS FARMACÊUTICA LTDA.",
+          "pais": "BRASIL",
+          "uf": "SP"
+        }
+      ],
+      "formasFarmaceuticas": [
+        "COMPRIMIDO REVESTIDO"
+      ],
+      "ifaUnico": true,
+      "inativa": false,
+      "marcas": [],
+      "medicamentoReferencia": "N",
+      "numero": 1,
+      "principiosAtivos": [
+        "CLORIDRATO DE TICLOPIDINA"
+      ],
+      "qtdUnidadeMedida": "20 cm²",
+      "registro": "1097400890011",
+      "restricaoHospitais": "N",
+      "restricaoPrescricao": [
+        "Venda sob Prescrição Médica"
+      ],
+      "restricaoUso": [
+        "Adulto"
+      ],
+      "tarja": "Vermelha",
+      "tipoAutorizacao": "REGISTRADO",
+      "tipoValidade": "2",
+      "tonalidade": null,
+      "validade": "24",
+      "viasAdministracao": [
+        "ORAL"
+      ]
+    },
+    {
+      "acessorios": [],
+      "acondicionamento": null,
+      "apresentacao": "250 MG COM REV  CT BL AL PLAS TRANS X 30",
+      "apresentacaoFracionada": "N",
+      "ativa": true,
+      "codigo": 117,
+      "complemento": null,
+      "conservacao": [
+        "CONSERVAR EM  TEMPERATURA AMBIENTE ( AMBIENTE COM TEMPERATURA ENTRE 15 E 30ºC)",
+        "PROTEGER DA LUZ E UMIDADE"
+      ],
+      "dataPublicacao": "2002-01-21T00:00:00.000-0200",
+      "dataVencimentoRegistro": null,
+      "destinacao": [
+        "Comercial"
+      ],
+      "emAnalise": false,
+      "embalagemPrimaria": null,
+      "embalagemPrimariaTodas": [
+        {
+          "observacao": null,
+          "tipo": "BLISTER DE ALUMINIO/PLASTICO TRANSPARENTE"
+        }
+      ],
+      "embalagemSecundaria": {
+        "observacao": null,
+        "tipo": "CARTUCHO DE CARTOLINA"
+      },
+      "embalagemSecundariaTodas": [
+        {
+          "observacao": null,
+          "tipo": "CARTUCHO DE CARTOLINA"
+        }
+      ],
+      "envoltorios": [],
+      "fabricantesInternacionais": [],
+      "fabricantesNacionais": [
+        {
+          "cidade": "JANDIRA",
+          "cnpj": "49475833001412",
+          "etapaFabricacao": "Processo produtivo completo ",
+          "fabricante": "BIOLAB SANUS FARMACÊUTICA LTDA",
+          "pais": "BRASIL",
+          "uf": "SP"
+        },
+        {
+          "cidade": "TABOÃO DA SERRA",
+          "cnpj": "49475833000106",
+          "etapaFabricacao": "Processo produtivo completo ",
+          "fabricante": "BIOLAB SANUS FARMACÊUTICA LTDA",
+          "pais": "BRASIL",
+          "uf": "SP"
+        },
+        {
+          "cidade": "BRAGANÇA PAULISTA",
+          "cnpj": "49475833001846",
+          "etapaFabricacao": "Embalagem secundária",
+          "fabricante": "BIOLAB SANUS FARMACÊUTICA LTDA.",
+          "pais": "BRASIL",
+          "uf": "SP"
+        }
+      ],
+      "formasFarmaceuticas": [
+        "COMPRIMIDO REVESTIDO"
+      ],
+      "ifaUnico": true,
+      "inativa": false,
+      "marcas": [],
+      "medicamentoReferencia": "N",
+      "numero": 2,
+      "principiosAtivos": [
+        "CLORIDRATO DE TICLOPIDINA"
+      ],
+      "qtdUnidadeMedida": "30 Comprimido",
+      "registro": "1097400890028",
+      "restricaoHospitais": "N",
+      "restricaoPrescricao": [
+        "Venda sob Prescrição Médica"
+      ],
+      "restricaoUso": [
+        "Adulto"
+      ],
+      "tarja": "Vermelha",
+      "tipoAutorizacao": "REGISTRADO",
+      "tipoValidade": "2",
+      "tonalidade": null,
+      "validade": "24",
+      "viasAdministracao": [
+        "ORAL 1"
+      ]
+    }
+  ],
+  "atc": null,
+  "atcs": [],
+  "categoriaMedicamentoNotificado": "0205001",
+  "categoriaRegulatoria": "Similar",
+  "classeTerapeutica": null,
+  "classesTerapeuticas": [
+    "OUTROS PRODUTOS QUE ATUAM NO SANGUE E HEMATOPOIESE"
+  ],
+  "codigoBulaPaciente": "eyJhbGciOiJIUzUxMiJ9.eyJqdGkiOiIxNDAyNzA4MiIsIm5iZiI6MTc3MjEzNzYxOSwiZXhwIjoxNzcyMTM3OTE5fQ.udowlko6P8UJ2ZdL_8iz9aJ0QSJU6MH3B8XED8CZma23NfPtWXjQzKneYN8uOby8bMUgJH2LEFYKklNN5h8Ryg",
+  "codigoBulaProfissional": "eyJhbGciOiJIUzUxMiJ9.eyJqdGkiOiIxNDAyNzA5NCIsIm5iZiI6MTc3MjEzNzYxOSwiZXhwIjoxNzcyMTM3OTE5fQ.Yr5JA0cCNc6QcJeqN0Z5BlLzSPJWOLriCskN5MxydjPnWbw7xdjp79RZ9DQ9QPOHkTIs97IA6c8RGCfJxBh60A",
+  "codigoCategoriaRegulatoria": 8,
+  "codigoNotificacao": 0,
+  "codigoParecerPublico": null,
+  "codigoProduto": 45,
+  "complemento": null,
+  "dataCancelamento": null,
+  "dataProduto": "1999-06-14T00:00:00.000-0300",
+  "dataVencimento": null,
+  "dataVencimentoRegistro": "2029-06-01T00:00:00.000-0300",
+  "descricaoMedicamentoNotificado": null,
+  "empresa": {
+    "cnpj": "49475833000106",
+    "numeroAutorizacao": "1009744",
+    "razaoSocial": "BIOLAB SANUS FARMACÊUTICA LTDA"
+  },
+  "existeBula": true,
+  "indicacoes": "",
+  "isProcessoClone": true,
+  "medicamentoReferencia": "TICLID",
+  "mesAnoVencimento": "062029",
+  "nomeComercial": "PLAKETAR",
+  "numeroRegistro": "109740089",
+  "principioAtivo": "CLORIDRATO DE TICLOPIDINA",
+  "processo": {
+    "numero": "250000130099961",
+    "situacao": 29
+  },
+  "processoMatriz": {
+    "codProduto": null,
+    "nomeProduto": null
+  },
+  "processosMedidaCautelar": [],
+  "rotulos": [],
+  "sinonimos": "",
+  "tipoAutorizacao": "REGISTRADO",
+  "tipoPriorizacao": "",
+  "tipoProduto": 1
+}

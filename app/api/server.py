@@ -150,7 +150,7 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
             
             # Headers
-            headers = ["ID", "MS", "SKU (Código)", "Medicamento", "DCB (Princípio Ativo)", "Apresentação", "Fabricante", "Lista Controle", "Embalagem", "Validade", "Tarja", "Atualizado Em"]
+            headers = ["ID", "MS", "SKU (Código)", "Medicamento", "DCB (Princípio Ativo)", "Apresentação", "Fabricante", "Lista Controle", "Embalagem", "Validade", "Tarja", "Ativo", "Atualizado Em"]
             writer.writerow(headers)
             
             for row in data:
@@ -166,6 +166,7 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     row.get("embalagem"),
                     row.get("validade"),
                     row.get("tarja"),
+                    "SIM" if row.get("ativa") else "NÃO",
                     row.get("updated_at")
                 ])
                 

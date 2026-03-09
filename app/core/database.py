@@ -42,6 +42,7 @@ class Database:
                 classes_terapeuticas TEXT,
                 fabricante TEXT,
                 lista_controle TEXT,
+                ativa BOOLEAN,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -52,6 +53,7 @@ class Database:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ativo_lookup ON presentations (principio_ativo)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_registro_lookup ON presentations (numero_registro)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_fabricante_lookup ON presentations (fabricante)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ativa ON presentations (ativa)')
         
         conn.commit()
         conn.close()
@@ -97,7 +99,7 @@ class Database:
             principio_ativo = root.get("principioAtivo") or (root.get("produto") or {}).get("principioAtivo") or "N/A"
 
             if not apresentacoes:
-                rows.append((codigo_produto, nome_comercial, numero_registro, "N/A", "N/A", "N/A", "N/A", principio_ativo, "", fabricante, "N/A"))
+                rows.append((codigo_produto, nome_comercial, numero_registro, "N/A", "N/A", "N/A", "N/A", principio_ativo, "", fabricante, "N/A", True))
             else:
                 for apt in apresentacoes:
                     if not apt: continue
@@ -106,6 +108,7 @@ class Database:
                     embalagem = embalagem_primaria.get("descricao")
                     validade = apt.get("validade")
                     tarja = apt.get("tarja")
+                    ativa = apt.get("ativa", True)
                     
                     classes = root.get("classesTerapeuticas", [])
                     classes_str = ", ".join(classes) if isinstance(classes, list) else str(classes)
@@ -115,11 +118,11 @@ class Database:
                         if "portaria 344" in c.lower() or "lista" in c.lower():
                             symbols = ["A1", "A2", "A3", "B1", "B2", "C1", "C2", "C3", "C4", "C5"]
                             for s in symbols:
-                                if s in c:
+                                 if s in c:
                                     lista = s
                                     break
                     
-                    rows.append((codigo_produto, nome_comercial, apt.get("registro"), apresentacao, embalagem, validade, tarja, principio_ativo, classes_str, fabricante, lista))
+                    rows.append((codigo_produto, nome_comercial, apt.get("registro"), apresentacao, embalagem, validade, tarja, principio_ativo, classes_str, fabricante, lista, ativa))
         return rows
 
     @staticmethod
@@ -151,8 +154,8 @@ class Database:
                             codigo_produto, nome_comercial, numero_registro, 
                             apresentacao, embalagem, validade,
                             tarja, principio_ativo, classes_terapeuticas,
-                            fabricante, lista_controle
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            fabricante, lista_controle, ativa
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', rows)
             
             conn.commit()

@@ -177,7 +177,7 @@ async function loadResults(page) {
                         <div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase; margin-top: 2px;">${item.fabricante || '--'}</div>
                     </td>
                     <td style="text-align:center;">
-                        <span class="badge ${item.lista_controle !== 'N/A' ? 'badge-black' : 'badge-default'}">${item.lista_controle || '--'}</span>
+                        <span class="badge ${item.ativa ? 'badge-black' : 'badge-default'}">${item.ativa ? 'SIM' : 'NÃO'}</span>
                     </td>
                 </tr>
             `).join('');
