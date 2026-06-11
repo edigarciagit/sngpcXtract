@@ -80,31 +80,49 @@ class SingleScraper:
                 return []
 
             # Map results back to codes
-            final_data = []
+            batch_results = {}
             # Create a reverse map URL -> Code
             url_to_code = {v: k for k, v in url_map.items()}
             
-            for res in results:
-                url = res.get('url')
-                code = url_to_code.get(url)
-                if res.get('status') == 'SUCCESS':
-                    final_data.append((code, res.get('data')))
-                else:
-                    logger.warning(f"Batch item failed for {code}: {res.get('message')}")
-                    # We could implement individual retries here if needed, 
-                    # but for now we'll rely on the orchestrator's chunking logic.
+            # Initialize all requested codes as failed in case they are missing from results
+            for code in codes:
+                batch_results[code] = {"success": False, "data": None, "error": "No response returned from browser script"}
             
-            return final_data
+            if isinstance(results, list):
+                for res in results:
+                    url = res.get('url')
+                    code = url_to_code.get(url)
+                    if not code:
+                        continue
+                    if res.get('status') == 'SUCCESS':
+                        batch_results[code] = {"success": True, "data": res.get('data'), "error": None}
+                    else:
+                        logger.warning(f"Batch item failed for {code}: {res.get('message')}")
+                        batch_results[code] = {"success": False, "data": None, "error": res.get('message')}
+            
+            return batch_results
 
         except Exception as e:
             logger.error(f"Error executing batch script: {e}")
-            return []
+            # Return all requested codes as failed with the exception message
+            return {code: {"success": False, "data": None, "error": str(e)} for code in codes}
 
     def scrape(self, code, driver=None):
         """
         KEEPS COMPATIBILITY: Scrapes a single code using the new batch logic (batch of 1).
         """
-        results = self.scrape_batch([code], driver)
-        if results:
-            return results[0][1]
-        return None
+        created_driver = False
+        if driver is None:
+            driver = WebDriverFactory.create_driver(headless=True)
+            driver.get("https://consultas.anvisa.gov.br/")
+            time.sleep(5)
+            created_driver = True
+            
+        try:
+            results = self.scrape_batch([code], driver)
+            if results and code in results and results[code]["success"]:
+                return results[code]["data"]
+            return None
+        finally:
+            if created_driver:
+                driver.quit()

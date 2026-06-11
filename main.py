@@ -3,6 +3,7 @@ import argparse
 from app.api.server import run_server
 from app.services.scraper_single import SingleScraper
 from app.services.scraper_bulk import BulkScraper
+from app.core.database import Database
 
 def main():
     parser = argparse.ArgumentParser(description="SNGPC Xtract CLI")
@@ -24,7 +25,13 @@ def main():
         run_server()
     elif args.command == "scrape":
         scraper = SingleScraper()
-        scraper.scrape(args.code)
+        data = scraper.scrape(args.code)
+        if data:
+            Database.init_db()
+            Database.save_product(int(args.code), data)
+            print(f"Product {args.code} scraped and saved directly to SQLite.")
+        else:
+            print(f"Failed to scrape product {args.code}.")
     elif args.command == "bulk":
         scraper = BulkScraper()
         scraper.run()

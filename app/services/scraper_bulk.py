@@ -4,6 +4,7 @@ import time
 import urllib.parse
 from app.core.driver import WebDriverFactory
 from app.core.logger import get_logger
+from app.core.database import Database
 
 logger = get_logger("scraper_bulk")
 
@@ -169,8 +170,6 @@ class BulkScraper:
                 driver.quit()
             
             if all_codes:
-                with open(self.output_file, 'w', encoding='utf-8') as f:
-                    json.dump(all_codes, f, indent=2, ensure_ascii=False)
-                logger.info(f"Saved {len(all_codes)} codes to {self.output_file}")
+                Database.save_bulk_codes(all_codes)
         
         return len(all_codes)

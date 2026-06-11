@@ -150,23 +150,52 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
             
             # Headers
-            headers = ["ID", "MS", "SKU (Código)", "Medicamento", "DCB (Princípio Ativo)", "Apresentação", "Fabricante", "Lista Controle", "Embalagem", "Validade", "Tarja", "Ativo", "Atualizado Em"]
+            headers = [
+                "ID", "MS (9 dígitos)", "MS Registro (13 dígitos)", "SKU (Código)", "Medicamento", 
+                "DCB (Princípio Ativo)", "Apresentação", "Fabricante", "CNPJ Fabricante", 
+                "Autorização Empresa", "Lista Controle", "Embalagem", "Validade", "Tarja", "Ativo", 
+                "Unidade Medida SNGPC", "Categoria Regulatória", "Existe Bula", "Bula Paciente", 
+                "Bula Profissional", "Data Registro Produto", "Data Vencimento Registro Produto", 
+                "Medicamento Referência", "Apresentação Fracionada", "Formas Farmacêuticas", 
+                "Vias Administração", "Qtd Unidade Medida", "Conservação", "Destinação", 
+                "Restrição Hospitais", "Restrição Prescrição", "Restrição Uso", "Atualizado Em"
+            ]
             writer.writerow(headers)
             
             for row in data:
                 writer.writerow([
                     row.get("id"),
                     row.get("numero_registro"),
+                    row.get("registro"),
                     row.get("codigo_produto"),
                     row.get("nome_comercial"),
                     row.get("principio_ativo"),
                     row.get("apresentacao"),
                     row.get("fabricante"),
+                    row.get("cnpj_empresa"),
+                    row.get("numero_autorizacao_empresa"),
                     row.get("lista_controle"),
                     row.get("embalagem"),
                     row.get("validade"),
                     row.get("tarja"),
                     "SIM" if row.get("ativa") else "NÃO",
+                    row.get("unidade_medida_medicamento"),
+                    row.get("categoria_regulatoria"),
+                    "SIM" if row.get("existe_bula") else "NÃO",
+                    row.get("codigo_bula_paciente"),
+                    row.get("codigo_bula_profissional"),
+                    row.get("data_produto"),
+                    row.get("data_vencimento_registro_produto"),
+                    row.get("medicamento_referencia"),
+                    row.get("apresentacao_fracionada"),
+                    row.get("formas_farmaceuticas"),
+                    row.get("vias_administracao"),
+                    row.get("qtd_unidade_medida"),
+                    row.get("conservacao"),
+                    row.get("destinacao"),
+                    row.get("restricao_hospitais"),
+                    row.get("restricao_prescricao"),
+                    row.get("restricao_uso"),
                     row.get("updated_at")
                 ])
                 

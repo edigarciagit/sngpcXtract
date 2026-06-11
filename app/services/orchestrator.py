@@ -4,6 +4,7 @@ import os
 import time
 import random
 import concurrent.futures
+import queue
 from math import ceil
 from app.services.scraper_bulk import BulkScraper
 from app.services.scraper_single import SingleScraper
@@ -44,15 +45,14 @@ class ExtractionOrchestrator:
             self.confirmation_event.set() # Release any waiting in confirmation
             self.thread.join(timeout=10)
             logger.info("Previous process stopped.")
-        self.stop_event.clear()
 
-    def start(self, reuse_bulk=False):
+    def start(self, reuse_bulk=False, num_workers=4):
         if self.thread and self.thread.is_alive():
             logger.warning("Process already running. Killing it and starting new...")
             self.stop()
         
         self.stop_event.clear()
-        self.thread = threading.Thread(target=self._run_pipeline, args=(reuse_bulk,))
+        self.thread = threading.Thread(target=self._run_pipeline, args=(reuse_bulk, num_workers))
         self.thread.start()
         return True, "Started."
 
@@ -65,7 +65,7 @@ class ExtractionOrchestrator:
         with self._lock:
             return self.status.copy()
 
-    def _run_pipeline(self, reuse_bulk):
+    def _run_pipeline(self, reuse_bulk, num_workers):
         try:
             with self._lock:
                 self.status["startTime"] = time.time()
@@ -76,25 +76,22 @@ class ExtractionOrchestrator:
             
             if not reuse_bulk:
                 self._update_status("RUNNING_BULK", "Clearing database and cache for fresh extraction...", 0, 0, 0)
+                Database.clear_bulk_codes()
                 Database.clear_data()
-                
-                # Clear bulk products cache file
-                bulk_file = "data/bulk_products.json"
-                if os.path.exists(bulk_file):
-                    try:
-                        os.remove(bulk_file)
-                        logger.info(f"Cleared existing cache: {bulk_file}")
-                    except Exception as e:
-                        logger.warning(f"Could not clear {bulk_file}: {e}")
-                
                 time.sleep(1)
 
             # Phase 1: Bulk
-            if reuse_bulk and os.path.exists("data/bulk_products.json") and os.path.getsize("data/bulk_products.json") > 0:
-                self._update_status("RUNNING_BULK", "Skipping fetch, using existing 'bulk_products.json'...", 0, 0, 5)
+            # Check if there are any codes already in the bulk products queue table in SQLite
+            existing_codes = Database.get_bulk_codes()
+            has_existing_codes = len(existing_codes) > 0
+            
+            if reuse_bulk and has_existing_codes:
+                self._update_status("RUNNING_BULK", "Skipping fetch, using existing codes in database...", 0, 0, 5)
                 time.sleep(1) # Visual delay
             else:
                 self._update_status("RUNNING_BULK", "Fetching product codes list...", 0, 0, 5)
+                # Ensure we clear the old queue first if we are doing a fresh crawl
+                Database.clear_bulk_codes()
                 bulk = BulkScraper()
                 
                 def on_count_found(count):
@@ -109,37 +106,46 @@ class ExtractionOrchestrator:
                     self._update_status("IDLE", "Extraction aborted by user.", 0, 0, 0)
                     return
                 
-                if not os.path.exists("data/bulk_products.json"):
-                    logger.error("Bulk extraction failed - output file missing.")
-                    raise Exception("Bulk scraping failed to produce output file.")
-                logger.info(f"Bulk extraction completed: {count} codes found.")
+                # Verify that codes were saved in SQLite bulk_products queue
+                total_in_db = len(Database.get_bulk_codes())
+                if total_in_db == 0:
+                    logger.error("Bulk extraction failed - queue in database is empty.")
+                    raise Exception("Bulk scraping failed to populate SQLite queue.")
+                logger.info(f"Bulk extraction completed: {total_in_db} codes saved in SQLite.")
 
             if self.stop_event.is_set():
                 logger.info("Pipeline stopped before details phase.")
                 return
 
             # Phase 2: Details (Parallel)
-            with open("data/bulk_products.json", 'r', encoding='utf-8') as f:
-                codes_list = json.load(f)
-            
+            # Resumption Support: Fetch only PENDING codes
+            codes_list = Database.get_bulk_codes(status='PENDING')
             total_items = len(codes_list)
-            self._update_status("RUNNING_DETAILS", f"Processing {total_items} items (High Performance Mode)...", total_items, 0, 10)
             
-            # Chunking strategies (Increased parallelism)
-            num_workers = 8
+            # Let's check the total elements (both PROCESSED and PENDING) to report correct progress percentage
+            all_codes_list = Database.get_bulk_codes()
+            grand_total = len(all_codes_list)
+            processed_count = grand_total - total_items
+            
+            self._update_status("RUNNING_DETAILS", f"Processing {total_items} pending items...", grand_total, processed_count, 10)
+            
+            # Dynamic Queue Worker Strategy
+            # num_workers is passed as parameter, defaulting to 4
             if total_items == 0:
-                self._update_status("COMPLETED", "No items to process.", 0, 0, 100)
+                self._update_status("COMPLETED", "All items processed successfully.", grand_total, grand_total, 100)
                 return
 
-            chunk_size = ceil(total_items / num_workers)
-            chunks = [codes_list[i:i + chunk_size] for i in range(0, total_items, chunk_size)]
-            
-            logger.info(f"Starting {len(chunks)} threads for {total_items} items.")
+            # Put all pending codes in queue
+            q = queue.Queue()
+            for item in codes_list:
+                code = item.get("codigoProduto")
+                if code:
+                    q.put(code)
+
+            logger.info(f"Starting {num_workers} worker threads for {total_items} items.")
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-                futures = []
-                for chunk in chunks:
-                    futures.append(executor.submit(self._process_chunk, chunk))
+                futures = [executor.submit(self._worker_process, q) for _ in range(num_workers)]
                 
                 # Wait for all to complete
                 concurrent.futures.wait(futures)
@@ -147,15 +153,19 @@ class ExtractionOrchestrator:
                 # Check for exceptions
                 for future in futures:
                     if future.exception():
-                        logger.error(f"Thread Error: {future.exception()}")
+                        logger.error(f"Worker Thread Error: {future.exception()}")
 
-            self._update_status("COMPLETED", "Extraction finished successfully.", total_items, total_items, 100)
+            # Check if execution was interrupted by stop signal
+            if self.stop_event.is_set():
+                self._update_status("IDLE", "Extraction stopped by user.", grand_total, self.status["current"], self.status["percent"])
+            else:
+                self._update_status("COMPLETED", "Extraction finished successfully.", grand_total, grand_total, 100)
             
         except Exception as e:
             logger.exception(f"Orchestrator Pipeline Error: {e}")
             self._update_status("ERROR", str(e), 0, 0, 0)
 
-    def _process_chunk(self, chunk):
+    def _worker_process(self, q):
         driver = None
         try:
             driver = WebDriverFactory.create_driver(headless=True)
@@ -164,61 +174,88 @@ class ExtractionOrchestrator:
             
             # Prime session
             driver.get("https://consultas.anvisa.gov.br/")
-            time.sleep(5)
-            
-            # Process in sub-batches of 10 for maximum JS concurrency
-            sub_batch_size = 10
-            for i in range(0, len(chunk), sub_batch_size):
+            # Interruptible sleep for priming session
+            for _ in range(50):
                 if self.stop_event.is_set():
                     break
+                time.sleep(0.1)
+            
+            while not self.stop_event.is_set():
+                # Get a sub-batch of up to 10 codes from the queue
+                sub_batch = []
+                for _ in range(10):
+                    try:
+                        code = q.get_nowait()
+                        sub_batch.append(code)
+                    except queue.Empty:
+                        break
                 
-                sub_batch = chunk[i:i + sub_batch_size]
-                codes = [item.get("codigoProduto") for item in sub_batch if item.get("codigoProduto")]
+                if not sub_batch or self.stop_event.is_set():
+                    break
                 
-                if not codes:
-                    continue
-
                 # Renew Session logic (approx 700 items safety per thread/browser)
                 if items_since_renew >= 700:
+                    if self.stop_event.is_set():
+                        break
                     logger.info("Renewing worker session for stability...")
                     driver.quit()
                     time.sleep(2)
+                    if self.stop_event.is_set():
+                        driver = None
+                        break
                     driver = WebDriverFactory.create_driver(headless=True)
                     driver.get("https://consultas.anvisa.gov.br/")
-                    time.sleep(5)
+                    for _ in range(50):
+                        if self.stop_event.is_set():
+                            break
+                        time.sleep(0.1)
                     items_since_renew = 0
                 
                 # Scrape entire sub-batch concurrently in JS
-                results = scraper.scrape_batch(codes, driver=driver)
+                results = scraper.scrape_batch(sub_batch, driver=driver)
                 
-                # Check for high failure rate (e.g., more than 50% failed)
-                # Success count
-                success_count = len([r for r in results if r[1]])
-                failure_count = len(codes) - success_count
+                if self.stop_event.is_set():
+                    break
+
+                # Check success rate for safety check
+                success_count = len([c for c, r in results.items() if r["success"]])
+                failure_count = len(sub_batch) - success_count
                 
-                if failure_count > (len(codes) // 2) and len(codes) > 1:
-                    logger.warning(f"High failure rate detected ({failure_count}/{len(codes)}). Possible soft block. Cooling down...")
-                    time.sleep(10)
+                if failure_count > (len(sub_batch) // 2) and len(sub_batch) > 1:
+                    logger.warning(f"High failure rate detected ({failure_count}/{len(sub_batch)}). Possible soft block. Cooling down...")
+                    # Interruptible sleep
+                    for _ in range(100):
+                        if self.stop_event.is_set():
+                            break
+                        time.sleep(0.1)
                     items_since_renew = 701 # Trigger renewal in next loop
                 
-                # Save results in high-performance DB batch
+                # Save results and update queue statuses in SQLite
                 Database.save_products_batch(results)
                 
-                items_since_renew += len(codes)
+                items_since_renew += len(sub_batch)
                 
                 # Update Global Progress
                 with self._lock:
-                    self.status["current"] += len(codes)
+                    self.status["current"] += len(sub_batch)
                     current = self.status["current"]
                     total = self.status["total"]
                     if total > 0:
                         self.status["percent"] = 10 + int((min(current, total) / total) * 90)
                         self.status["message"] = f"Processed {current}/{total} (Turbo Mode)"
                     self._calculate_elapsed_time_locked()
-
-                # Optimized polite delay
-                time.sleep(random.uniform(0.3, 0.7))
-
+                
+                # Mark tasks as done in queue
+                for _ in range(len(sub_batch)):
+                    q.task_done()
+                
+                # Optimized polite delay (interruptible)
+                delay = random.uniform(0.3, 0.7)
+                for _ in range(int(delay * 10)):
+                    if self.stop_event.is_set():
+                        break
+                    time.sleep(0.1)
+                
         except Exception as e:
             logger.exception(f"Worker thread crashed: {e}")
             raise e

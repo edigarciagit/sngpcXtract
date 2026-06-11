@@ -101,7 +101,7 @@
                                 <th>SKU</th>
                                 <th>MEDICAMENTO / DCB</th>
                                 <th>APRESENTAÇÃO / LABORATÓRIO</th>
-                                <th>ATIVO</th>
+                                <th>ATIVO / SNGPC</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -138,6 +138,147 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="confirmExtraction(false)">ABORTAR</button>
                 <button class="btn" onclick="confirmExtraction(true)">PROSSEGUIR</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Details Modal -->
+    <div id="details-modal" class="modal-overlay" style="display: none;" onclick="handleDetailsModalClick(event)">
+        <div class="modal-content details-modal">
+            <div class="modal-header" style="border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px;">
+                <div class="brand" style="margin-bottom: 4px;">DETALHES DO PRODUTO</div>
+                <h2 id="details-title" style="font-size: 18px; font-weight: 600; text-transform: uppercase; margin-top: 8px;">NOME COMERCIAL</h2>
+                <div id="details-subtitle" style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px; text-transform: uppercase;">PRINCÍPIO ATIVO</div>
+            </div>
+            <div class="modal-body" style="max-height: 480px; overflow-y: auto; padding-right: 8px; margin-bottom: 24px;">
+                <div class="details-grid">
+                    <!-- Section 1: Identificação Geral -->
+                    <div class="details-section">
+                        <h3>Identificação do Produto</h3>
+                        <div class="detail-item">
+                            <span class="detail-label">SKU (Código Anvisa)</span>
+                            <span class="detail-value" id="detail-sku">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Registro MS (13 dígitos)</span>
+                            <span class="detail-value" id="detail-registro-ms">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Registro MS (9 dígitos)</span>
+                            <span class="detail-value" id="detail-registro-9">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Fabricante / Laboratório</span>
+                            <span class="detail-value" id="detail-fabricante">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">CNPJ Fabricante</span>
+                            <span class="detail-value" id="detail-cnpj">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Nº Autorização AFE</span>
+                            <span class="detail-value" id="detail-afe">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Categoria Regulatória</span>
+                            <span class="detail-value" id="detail-categoria">--</span>
+                        </div>
+                    </div>
+
+                    <!-- Section 2: Controle SNGPC -->
+                    <div class="details-section">
+                        <h3>Especificações SNGPC</h3>
+                        <div class="detail-item">
+                            <span class="detail-label">Unidade de Medida</span>
+                            <span class="detail-value" id="detail-unidade-sngpc">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Tarja de Controle</span>
+                            <span class="detail-value" id="detail-tarja">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Lista de Controle</span>
+                            <span class="detail-value" id="detail-lista">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Apresentação Fracionada</span>
+                            <span class="detail-value" id="detail-fracionado">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Quantidade Unidade Medida</span>
+                            <span class="detail-value" id="detail-qtd-medida">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Status Registro Anvisa</span>
+                            <span class="detail-value" id="detail-status">--</span>
+                        </div>
+                    </div>
+
+                    <!-- Section 3: Uso & Conservação -->
+                    <div class="details-section" style="grid-column: span 2;">
+                        <h3>Uso, Conservação & Restrições</h3>
+                        <div class="detail-item">
+                            <span class="detail-label">Forma Farmacêutica</span>
+                            <span class="detail-value" id="detail-forma">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Via de Administração</span>
+                            <span class="detail-value" id="detail-via">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Destinação</span>
+                            <span class="detail-value" id="detail-destinacao">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Condições de Conservação</span>
+                            <span class="detail-value" id="detail-conservacao">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Restrição Hospitalar</span>
+                            <span class="detail-value" id="detail-restricao-hosp">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Restrição de Prescrição</span>
+                            <span class="detail-value" id="detail-restricao-presc">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Restrição de Uso</span>
+                            <span class="detail-value" id="detail-restricao-uso">--</span>
+                        </div>
+                    </div>
+
+                    <!-- Section 4: Registro & Bula -->
+                    <div class="details-section" style="grid-column: span 2;">
+                        <h3>Registro & Bulas</h3>
+                        <div class="detail-item">
+                            <span class="detail-label">Data de Registro do Produto</span>
+                            <span class="detail-value" id="detail-data-registro">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Validade Homologada</span>
+                            <span class="detail-value" id="detail-validade">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Vencimento do Registro</span>
+                            <span class="detail-value" id="detail-vencimento-registro">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Medicamento de Referência</span>
+                            <span class="detail-value" id="detail-referencia">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Link Bula Paciente</span>
+                            <span class="detail-value" id="detail-bula-paciente">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Link Bula Profissional</span>
+                            <span class="detail-value" id="detail-bula-profissional">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="border-top: 1px solid var(--border); padding-top: 16px;">
+                <button class="btn btn-secondary" onclick="closeDetailsModal()">FECHAR</button>
             </div>
         </div>
     </div>

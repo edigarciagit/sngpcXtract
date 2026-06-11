@@ -465,3 +465,70 @@ tbody tr {
         opacity: 1;
     }
 }
+
+/* --- Clicking rows styling --- */
+tbody tr {
+    cursor: pointer;
+}
+
+/* --- Product Details Modal Styling --- */
+.modal-content.details-modal {
+    width: 800px;
+    max-width: 90vw;
+}
+
+.details-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+
+.details-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.details-section h3 {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    color: var(--text-primary);
+    border-left: 3px solid var(--accent);
+    padding-left: 8px;
+    margin-bottom: 8px;
+    letter-spacing: 0.05em;
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    align-items: center;
+    gap: 12px;
+}
+
+.detail-label {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.detail-value {
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    text-align: right;
+    word-break: break-word;
+}
+
+.detail-value a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--accent);
+}
+
+.detail-value a:hover {
+    color: var(--text-primary);
+    border-bottom-color: var(--text-primary);
+}
