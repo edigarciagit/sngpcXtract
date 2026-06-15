@@ -1,0 +1,532 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "SNGPC Xtract API Documentation",
+    "description": "API interativa para consulta, extração e exportação de dados de medicamentos integrados com o portal Anvisa para atender os padrões SNGPC.",
+    "version": "2.5.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Servidor Local"
+    }
+  ],
+  "paths": {
+    "/api/results": {
+      "get": {
+        "summary": "Listar e Buscar Apresentações",
+        "description": "Retorna uma lista paginada de apresentações de medicamentos importadas do banco SQLite local. Permite busca textual combinada em múltiplos campos.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Número da página a ser consultada (1-indexed).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "description": "Quantidade máxima de registros retornados por página.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Termo de pesquisa (busca por nome comercial, princípio ativo, registro MS, classes terapêuticas ou tarja).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de apresentações paginadas obtida com sucesso.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "content": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Product"
+                      }
+                    },
+                    "totalPages": {
+                      "type": "integer",
+                      "example": 5
+                    },
+                    "totalElements": {
+                      "type": "integer",
+                      "example": 45
+                    },
+                    "page": {
+                      "type": "integer",
+                      "example": 1
+                    },
+                    "size": {
+                      "type": "integer",
+                      "example": 10
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro interno no servidor."
+          }
+        }
+      }
+    },
+    "/api/ms/{ms_code}": {
+      "get": {
+        "summary": "Consultar por Registro MS",
+        "description": "Busca apresentações filtrando exatamente pelo código de registro MS de 9 ou 13 dígitos.",
+        "parameters": [
+          {
+            "name": "ms_code",
+            "in": "path",
+            "description": "Código de registro MS (ex: 1015502210080 ou 101550221). Caracteres não numéricos serão desconsiderados automaticamente.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de apresentações correspondentes ao registro MS encontrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Presentation"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Parâmetro do código MS ausente ou inválido."
+          },
+          "500": {
+            "description": "Erro interno ao consultar o banco de dados."
+          }
+        }
+      }
+    },
+    "/api/export": {
+      "get": {
+        "summary": "Exportar Banco de Dados em CSV",
+        "description": "Gera o dump total de apresentações no formato de arquivo CSV separado por ponto e vírgula (;), codificado em UTF-8 com BOM.",
+        "responses": {
+          "200": {
+            "description": "Arquivo CSV retornado para download.",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string",
+                  "example": "attachment; filename=sngpc_data.csv"
+                }
+              }
+            },
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro na geração do CSV."
+          }
+        }
+      }
+    },
+    "/api/progress": {
+      "get": {
+        "summary": "Consultar Progresso da Extração",
+        "description": "Obtém o estado e percentual de progresso do pipeline de extração atualmente rodando em segundo plano.",
+        "responses": {
+          "200": {
+            "description": "Objeto contendo o progresso e estado da extração.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "enum": ["IDLE", "RUNNING_BULK", "AWAITING_CONFIRMATION", "RUNNING_DETAILS", "COMPLETED", "ERROR"],
+                      "example": "RUNNING_DETAILS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Processed 258/1000 (Turbo Mode)"
+                    },
+                    "total": {
+                      "type": "integer",
+                      "example": 1000
+                    },
+                    "current": {
+                      "type": "integer",
+                      "example": 258
+                    },
+                    "percent": {
+                      "type": "integer",
+                      "example": 35
+                    },
+                    "startTime": {
+                      "type": "number",
+                      "example": 1770818408.0
+                    },
+                    "elapsedTime": {
+                      "type": "string",
+                      "example": "00:05:32"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extract": {
+      "post": {
+        "summary": "Iniciar Extração de Dados",
+        "description": "Inicia o processo de raspagem da Anvisa em segundo plano (Scraping em lote e detalhes).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reuse": {
+                    "type": "boolean",
+                    "description": "Se verdadeiro, reutiliza códigos bulk já salvos na fila local do banco de dados.",
+                    "default": false
+                  },
+                  "inactive_only": {
+                    "type": "boolean",
+                    "description": "Se verdadeiro, extrai apenas registros cancelados/inativos da Anvisa.",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Processo de extração inicializado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Started."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Falha ao iniciar processo."
+          }
+        }
+      }
+    },
+    "/api/confirm": {
+      "post": {
+        "summary": "Confirmar Extração",
+        "description": "Confirma se o orquestrador deve prosseguir ou abortar após concluir a contagem bulk da Anvisa.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "proceed": {
+                    "type": "boolean",
+                    "description": "Se verdadeiro, inicia a extração em paralelo. Se falso, aborta.",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Confirmação processada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Confirmation received."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stop": {
+      "post": {
+        "summary": "Parar Processo de Extração",
+        "description": "Envia um sinal de interrupção imediata para parar todas as threads e scrapers em segundo plano.",
+        "responses": {
+          "200": {
+            "description": "Sinal de parada enviado com sucesso.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Stop signal sent."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logs": {
+      "get": {
+        "summary": "Listar Logs de Execução",
+        "description": "Recupera as últimas 100 linhas do arquivo de log da aplicação no servidor.",
+        "responses": {
+          "200": {
+            "description": "Logs obtidos com sucesso.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "2026-06-11 14:15:52,165 - sngpc.api_server - INFO - API Server started...",
+                        "2026-06-11 14:16:04,500 - sngpc.database - INFO - Query executed..."
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Product": {
+        "type": "object",
+        "properties": {
+          "numero_registro": {
+            "type": "string",
+            "description": "Registro MS de 9 dígitos (número base) do produto pai.",
+            "example": "101550221"
+          },
+          "nome_comercial": {
+            "type": "string",
+            "description": "Nome comercial do produto.",
+            "example": "SONORIPAN"
+          },
+          "principio_ativo": {
+            "type": "string",
+            "description": "Princípio ativo do produto.",
+            "example": "VALERIANA OFFICINALIS L."
+          },
+          "fabricante": {
+            "type": "string",
+            "description": "Fabricante / Laboratório do produto.",
+            "example": "MARJAN INDÚSTRIA E COMÉRCIO LTDA"
+          },
+          "ativa": {
+            "type": "integer",
+            "description": "Indica se o produto tem alguma apresentação ativa (1 = Sim, 0 = Não).",
+            "example": 1
+          },
+          "qtd_apresentacoes": {
+            "type": "integer",
+            "description": "Quantidade total de apresentações filhas vinculadas a este produto.",
+            "example": 11
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "Data de atualização da última alteração no produto.",
+            "example": "2026-06-11 13:24:44"
+          }
+        }
+      },
+      "Presentation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 127991
+          },
+          "codigo_produto": {
+            "type": "integer",
+            "description": "Código interno (SKU) do produto na Anvisa.",
+            "example": 113
+          },
+          "nome_comercial": {
+            "type": "string",
+            "example": "SONORIPAN"
+          },
+          "numero_registro": {
+            "type": "string",
+            "description": "Registro MS de 9 dígitos (número base).",
+            "example": "101550221"
+          },
+          "apresentacao": {
+            "type": "string",
+            "example": "50 MG COM REV CT 9 BL AL PLAS INC X 10"
+          },
+          "embalagem": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "validade": {
+            "type": "string",
+            "description": "Validade em meses.",
+            "example": "24"
+          },
+          "tarja": {
+            "type": "string",
+            "nullable": true,
+            "example": "Sem Tarja"
+          },
+          "principio_ativo": {
+            "type": "string",
+            "example": "VALERIANA OFFICINALIS L."
+          },
+          "classes_terapeuticas": {
+            "type": "string",
+            "example": "FITOTERAPICO SIMPLES, ANSIOLITICOS SIMPLES"
+          },
+          "fabricante": {
+            "type": "string",
+            "example": "MARJAN INDÚSTRIA E COMÉRCIO LTDA"
+          },
+          "lista_controle": {
+            "type": "string",
+            "description": "Lista de controle regulatório SNGPC (ex: A1, B1, C1 ou N/A).",
+            "example": "N/A"
+          },
+          "ativa": {
+            "type": "integer",
+            "description": "Status do registro na Anvisa (1 = Ativo, 0 = Inativo/Cancelado).",
+            "example": 0
+          },
+          "unidade_medida_medicamento": {
+            "type": "integer",
+            "description": "Código da unidade de medida do SNGPC (1 = Caixa, 2 = Frasco).",
+            "example": 1
+          },
+          "categoria_regulatoria": {
+            "type": "string",
+            "example": "Fitoterápico"
+          },
+          "existe_bula": {
+            "type": "integer",
+            "description": "Sinaliza se existe bula cadastrada (1 = Sim, 0 = Não).",
+            "example": 0
+          },
+          "codigo_bula_paciente": {
+            "type": "string",
+            "description": "Código hash para download da bula do paciente.",
+            "example": "eyJhbGciOi..."
+          },
+          "codigo_bula_profissional": {
+            "type": "string",
+            "description": "Código hash para download da bula do profissional.",
+            "example": "eyJhbGciOi..."
+          },
+          "data_produto": {
+            "type": "string",
+            "description": "Data inicial do registro.",
+            "example": "2001-03-26T00:00:00.000-0300"
+          },
+          "data_vencimento_registro_produto": {
+            "type": "string",
+            "description": "Data de vencimento do registro.",
+            "example": "2026-03-01T00:00:00.000-0300"
+          },
+          "cnpj_empresa": {
+            "type": "string",
+            "example": "60726692000181"
+          },
+          "numero_autorizacao_empresa": {
+            "type": "string",
+            "description": "Autorização de Funcionamento de Empresa (AFE) na Anvisa.",
+            "example": "1001555"
+          },
+          "registro": {
+            "type": "string",
+            "description": "Registro MS completo.",
+            "example": "1015502210080"
+          },
+          "formas_farmaceuticas": {
+            "type": "string",
+            "example": "COMPRIMIDO REVESTIDO"
+          },
+          "vias_administracao": {
+            "type": "string",
+            "example": "ORAL"
+          },
+          "updated_at": {
+            "type": "string",
+            "example": "2026-06-11 13:24:44"
+          }
+        }
+      }
+    }
+  }
+}

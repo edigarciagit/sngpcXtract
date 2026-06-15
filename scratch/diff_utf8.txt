@@ -1,0 +1,1385 @@
+﻿diff --git a/app/api/server.py b/app/api/server.py
+index 05c76f8..556229a 100644
+--- a/app/api/server.py
++++ b/app/api/server.py
+@@ -18,10 +18,13 @@ PORT = 8000
+ 
+ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+     def do_GET(self):
+-        logger.debug(f"GET Request: {self.path}")
++        logger.info(f"GET Request: {self.path}")
+         if self.path == "/" or self.path == "/index.html":
+             self.path = "/frontend/index.html"
+             super().do_GET()
++        elif self.path == "/api-docs" or self.path == "/api-docs/" or self.path == "/docs" or self.path == "/docs/":
++            self.path = "/frontend/swagger.html"
++            super().do_GET()
+         elif self.path.startswith("/frontend/"):
+             super().do_GET()
+         
+@@ -34,6 +37,8 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+             self.handle_export()
+         elif self.path == '/api/logs':
+             self.handle_logs()
++        elif self.path.startswith('/api/ms/'):
++            self.handle_ms()
+         else:
+             # Fallback
+             if not self.path.startswith("/frontend/") and not self.path.startswith("/api/"):
+@@ -41,26 +46,35 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+             super().do_GET()
+ 
+     def do_POST(self):
++        logger.info(f"POST Request: {self.path}")
+         if self.path == '/api/extract':
+             self.handle_extract()
+         elif self.path == '/api/confirm':
+             self.handle_confirm()
+         elif self.path == '/api/stop':
+             self.handle_stop()
++        elif self.path == '/api/dcb/import':
++            self.handle_dcb_import()
+         else:
+             self.send_error(404, "Not Found")
+ 
++    def log_message(self, format, *args):
++        # Redirect standard HTTP server logs to python logger
++        logger.info(f"HTTP Server - {self.address_string()} - {format % args}")
++
+     def handle_extract(self):
+         content_len = int(self.headers.get('Content-Length', 0))
+         post_body = self.rfile.read(content_len)
+         try:
+             params = json.loads(post_body.decode('utf-8'))
+             reuse_bulk = params.get('reuse', False)
++            inactive_only = params.get('inactive_only', False)
+         except:
+             reuse_bulk = False
++            inactive_only = False
+ 
+         orchestrator = ExtractionOrchestrator()
+-        success, msg = orchestrator.start(reuse_bulk=reuse_bulk)
++        success, msg = orchestrator.start(reuse_bulk=reuse_bulk, inactive_only=inactive_only)
+         
+         self.send_response(200 if success else 400)
+         self.send_header('Content-type', 'application/json')
+@@ -83,6 +97,7 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+ 
+         orchestrator = ExtractionOrchestrator()
+         success, msg = orchestrator.confirm_extraction(proceed=proceed)
++        logger.info(f"Extraction confirmation received: proceed={proceed}. Result: success={success}, msg={msg}")
+         
+         self.send_response(200 if success else 400)
+         self.send_header('Content-type', 'application/json')
+@@ -92,12 +107,25 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+     def handle_stop(self):
+         orchestrator = ExtractionOrchestrator()
+         orchestrator.stop()
++        logger.info("Extraction stop signal processed.")
+         
+         self.send_response(200)
+         self.send_header('Content-type', 'application/json')
+         self.end_headers()
+         self.wfile.write(json.dumps({"success": True, "message": "Stop signal sent."}).encode('utf-8'))
+ 
++    def handle_dcb_import(self):
++        from app.services.dcb_service import DCBService
++        logger.info("DCB manual import triggered via POST /api/dcb/import")
++        success, msg = DCBService.import_from_xlsx()
++        logger.info(f"DCB manual import finished. Result: success={success}, msg={msg}")
++        
++        self.send_response(200 if success else 500)
++        self.send_header('Content-type', 'application/json')
++        self.send_header('Access-Control-Allow-Origin', '*')
++        self.end_headers()
++        self.wfile.write(json.dumps({"success": success, "message": msg}).encode('utf-8'))
++
+     def handle_progress(self):
+         orchestrator = ExtractionOrchestrator()
+         status = orchestrator.get_status()
+@@ -115,12 +143,14 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+             size = int(params.get('size', [10])[0])
+             
+             search_query = params.get('search', [None])[0] or params.get('q', [None])[0]
++            list_filter = params.get('list', [None])[0]
++            logger.info(f"Fetching presentations results: page={page}, size={size}, query='{search_query}', list_filter='{list_filter}'")
+             
+             # Retrieve from DB
+-            total_items = Database.get_total_count(search_query)
++            total_items = Database.get_total_count(search_query, list_filter)
+             total_pages = math.ceil(total_items / size) if size > 0 else 1
+             
+-            paged_items = Database.get_presentations(page, size, search_query)
++            paged_items = Database.get_presentations(page, size, search_query, list_filter)
+             
+             response = {
+                 "content": paged_items,
+@@ -140,8 +170,36 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+             logger.error(f"Error handling results API: {e}")
+             self.send_error(500, str(e))
+ 
++    def handle_ms(self):
++        try:
++            parts = self.path.split('/')
++            if len(parts) >= 4 and parts[3]:
++                ms_code = parts[3]
++                if '?' in ms_code:
++                    ms_code = ms_code.split('?')[0]
++                
++                logger.info(f"Querying product details for MS code: {ms_code}")
++                presentations = Database.get_presentations_by_ms(ms_code)
++                
++                # Enrich with DCB details
++                from app.services.dcb_service import DCBService
++                for p in presentations:
++                    p["dcb_list"] = DCBService.get_dcb_details_for_product(p.get("principio_ativo"))
++                
++                self.send_response(200)
++                self.send_header('Content-type', 'application/json')
++                self.send_header('Access-Control-Allow-Origin', '*')
++                self.end_headers()
++                self.wfile.write(json.dumps(presentations).encode('utf-8'))
++            else:
++                self.send_error(400, "Bad Request: Missing MS registration code in path.")
++        except Exception as e:
++            logger.error(f"Error handling MS query API: {e}")
++            self.send_error(500, str(e))
++
+     def handle_export(self):
+         try:
++            logger.info("Exporting all presentations to CSV file.")
+             # Retrieve all data
+             data = Database.get_all_presentations_raw()
+             
+@@ -238,6 +296,21 @@ def run_server():
+     socketserver.TCPServer.allow_reuse_address = True
+     # Initialize DB on startup
+     Database.init_db()
++    
++    # Auto-import DCB list on startup if empty
++    try:
++        conn = Database._get_connection()
++        cursor = conn.cursor()
++        cursor.execute("SELECT COUNT(*) FROM dcb_lookup")
++        count = cursor.fetchone()[0]
++        conn.close()
++        if count == 0:
++            logger.info("DCB database table is empty. Auto-importing DCB entries...")
++            from app.services.dcb_service import DCBService
++            DCBService.import_from_xlsx()
++    except Exception as e:
++        logger.error(f"Error checking/auto-importing DCB on startup: {e}")
++        
+     with socketserver.TCPServer(("", PORT), ProxyHTTPRequestHandler) as httpd:
+         logger.info(f"API Server started and listening at http://localhost:{PORT}")
+         httpd.serve_forever()
+diff --git a/app/core/database.py b/app/core/database.py
+index 48504de..72c2a42 100644
+--- a/app/core/database.py
++++ b/app/core/database.py
+@@ -1,5 +1,6 @@
+ import sqlite3
+ import json
++import re
+ from datetime import datetime
+ from app.core.logger import get_logger
+ 
+@@ -7,6 +8,110 @@ logger = get_logger("database")
+ 
+ DB_NAME = "sngpc.db"
+ 
++def get_control_list(principio_ativo, classes_str, nome_comercial):
++    # Normalize inputs
++    pa = (principio_ativo or "").upper()
++    cls = (classes_str or "").upper()
++    nome = (nome_comercial or "").upper()
++    
++    # 1. First, check if the commercial name or class contains the list explicitly
++    # e.g. "SULFATO DE MORFINA (PORT 344/98 LISTA A1)"
++    for s in ["A1", "A2", "A3", "B1", "B2", "C1", "C2", "C3", "C4", "C5"]:
++        pattern = rf"\bLISTA\s*[-ÔÇôÔÇö]?\s*{s}\b"
++        if re.search(pattern, nome) or re.search(pattern, cls):
++            return s
++
++    # 2. Check by active ingredients (principio_ativo)
++    # A1 (Entorpecentes)
++    a1_substances = ["MORFINA", "METADONA", "FENTANIL", "OXICODONA", "PETIDINA", "REMIFENTANIL", "SUFENTANIL", "TAPENTADOL", "ALFENTANIL", "HIDROMORFONA"]
++    if any(s in pa for s in a1_substances):
++        return "A1"
++        
++    # A3 (Psicotr├│picos estimulantes)
++    a3_substances = ["METILFENIDATO", "LISDEXANFETAMINA"]
++    if any(s in pa for s in a3_substances):
++        return "A3"
++        
++    # B1 (Psicotr├│picos)
++    b1_substances = ["CLONAZEPAM", "DIAZEPAM", "ALPRAZOLAM", "LORAZEPAM", "MIDAZOLAM", "BROMAZEPAM", "FENOBARBITAL", "CLOBAZAM", "NITRAZEPAM", "FLURAZEPAM", "CLORDIAZEP├ôXIDO", "CLORDIAZEPOXIDO", "CLOXAZOLAM", "ESTAZOLAM", "TRIAZOLAM", "OXAZEPAM", "KETAZOLAM"]
++    if any(s in pa for s in b1_substances):
++        return "B1"
++        
++    # B2 (Anorex├¡genos)
++    b2_substances = ["SIBUTRAMINA", "ANFEPRAMONA", "FEMPROPOREX", "MAZINDOL"]
++    if any(s in pa for s in b2_substances):
++        return "B2"
++
++    # C2 (Retin├│ides sist├¬micos)
++    c2_substances = ["ISOTRETINOINA", "ISOTRETINO├ìNA", "ACITRETINA"]
++    if any(s in pa for s in c2_substances):
++        return "C2"
++
++    # C3 (Imunossupressores)
++    c3_substances = ["TALIDOMIDA", "LENALIDOMIDA", "POMALIDOMIDA"]
++    if any(s in pa for s in c3_substances):
++        return "C3"
++
++    # C4 (Antirretrovirais)
++    c4_substances = ["ZIDOVUDINA", "LAMIVUDINA", "TENOFOVIR", "EFAVIRENZ", "NEVIRAPINA", "LOPINAVIR", "RITONAVIR", "ATAZANAVIR", "DARUNAVIR", "RALTEGRAVIR", "DOLUTEGRAVIR", "ABACAVIR", "ETRAVIRINA", "RILPIVIRINA", "EMTRICITABINA", "COBICISTATE", "ELVITEGRAVIR"]
++    if any(s in pa for s in c4_substances):
++        return "C4"
++
++    # C5 (Anabolizantes)
++    c5_substances = ["TESTOSTERONA", "ESTANOZOLOL", "NANDROLONA", "OXANDROLONA", "SOMATROPINA", "OXIMETOLONA", "MESTEROLONA"]
++    if any(s in pa for s in c5_substances):
++        return "C5"
++        
++    # A2 (Entorpecentes de uso permitido)
++    if "TRAMADOL" in pa:
++        if "A2" in nome or "A2" in cls:
++            return "A2"
++        return "C1"
++    if "CODEINA" in pa or "CODE├ìNA" in pa:
++        if "A2" in nome or "A2" in cls:
++            return "A2"
++        return "C1"
++
++    # C1 (Outras subst├óncias sujeitas a controle especial)
++    c1_substances = [
++        "AMITRIPTILINA", "NORTRIPTILINA", "IMIPRAMINA", "CLOMIPRAMINA", "FLUOXETINA", "SERTRALINA", 
++        "PAROXETINA", "CITALOPRAM", "ESCITALOPRAM", "FLUVOXAMINA", "VENLAFAXINA", "DESVENLAFAXINA", 
++        "DULOXETINA", "BUPROPIONA", "MIRTAZAPINA", "AGOMELATINA", "TRAZODONA", "VORTIOXETINA", "MAPROTILINA",
++        "CLORPROMAZINA", "LEVOMEPROMAZINA", "HALOPERIDOL", "RISPERIDONA", "OLANZAPINA", "QUETIAPINA", 
++        "ARIPIPRAZOL", "ZIPRASIDONA", "CLOZAPINA", "SULPIRIDA", "PIMOZIDA", "ZUCLOPENTIXOL", "AMISULPRIDA", 
++        "CARIPRAZINA", "PALIPERIDONA", "LURASIDONA", "ASENAPINA",
++        "CARBAMAZEPINA", "ACIDO VALPROICO", "├üCIDO VALPR├ôICO", "VALPROATO", "DIVALPROATO", "TOPIRAMATO", 
++        "GABAPENTINA", "PREGABALINA", "LAMOTRIGINA", "FENITOINA", "FENITO├ìNA", "OXCARBAZEPINA", "VIGABATRINA", 
++        "PRIMIDONA", "LACOSAMIDA", "LEVETIRACETAM", "BRIVARACETAM",
++        "PRAMIPEXOL", "ROPINIROL", "ROTIGOTINA", "SELEGILINA", "RASAGILINA", "BIPERIDENO",
++        "ZOLPIDEM", "ZOPICLONA", "ESZOPICLONA", "BUSPIRONA", "LITIO", "L├ìTIO", "MEMANTINA", "DONEPEZILA", 
++        "RIVASTIGMINA", "GALANTAMINA", "HALOTANO", "ISOFLURANO", "SEVOFLURANO", "PROPOFOL", "CETAMINA"
++    ]
++    if any(s in pa for s in c1_substances):
++        return "C1"
++
++    # AB (Antimicrobianos)
++    antibiotic_keywords = ["ANTIBIOTICO", "ANTIBACTERIANO", "CEFALOSPORINA", "PENICILINA", "QUINOLONA", "RIFAMPICINA", "RIFAXIMINA", "SULFA", "TUBERCULOSTATICO", "TUBERCULOSE", "MACROLIDEO", "MACROL├ìDEO"]
++    has_antibiotic_class = False
++    if any(kw in cls for kw in antibiotic_keywords):
++        has_antibiotic_class = True
++        
++    antibiotic_pas = [
++        "AMOXICILINA", "CEFALEXINA", "AZITROMICINA", "CIPROFLOXACINO", "CLARITROMICINA", 
++        "NEOMICINA", "ERITROMICINA", "METRONIDAZOL", "DOXICICLINA", "SULFAMETOXAZOL", 
++        "TRIMETOPRIMA", "AMPICILINA", "CEFALOTINA", "CEFTRIAXONA", "CLINDAMICINA", 
++        "GENTAMICINA", "LEVOFLOXACINO", "NORFLOXACINO", "OFLOXACINO", "TETRACICLINA", 
++        "RIFAMPICINA", "RIFAXIMINA", "LINEZOLIDA", "MEROPENEM", "IMIPENEM", 
++        "CILASTATINA", "VANCOMICINA", "TEICOPLANINA", "POLIMIXINA", "COLISTINA", 
++        "SULFADIAZINA", "NITROFURANTOINA", "MINOCICLINA", "CLORANFENICOL"
++    ]
++    has_antibiotic_pa = any(s in pa for s in antibiotic_pas)
++    
++    if has_antibiotic_class or has_antibiotic_pa:
++        return "AB"
++
++    return "N/A"
++
+ class Database:
+     @staticmethod
+     def _get_connection():
+@@ -86,12 +191,15 @@ class Database:
+             )
+         ''')
+         
+-        # Check if table bulk_products has the retries column (for backward compatibility / migration)
++        # Check if table bulk_products has the retries and data_atualizacao columns (for backward compatibility / migration)
+         cursor.execute("PRAGMA table_info(bulk_products)")
+         columns = [col[1] for col in cursor.fetchall()]
+         if 'retries' not in columns:
+             logger.info("Migrating database bulk_products table: adding 'retries' column...")
+             cursor.execute("ALTER TABLE bulk_products ADD COLUMN retries INTEGER DEFAULT 0")
++        if 'data_atualizacao' not in columns:
++            logger.info("Migrating database bulk_products table: adding 'data_atualizacao' column...")
++            cursor.execute("ALTER TABLE bulk_products ADD COLUMN data_atualizacao TEXT")
+ 
+         cursor.execute('CREATE INDEX IF NOT EXISTS idx_bulk_status ON bulk_products (status)')
+ 
+@@ -103,9 +211,37 @@ class Database:
+         cursor.execute('CREATE INDEX IF NOT EXISTS idx_fabricante_lookup ON presentations (fabricante)')
+         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ativa ON presentations (ativa)')
+         
++        # Create table dcb_lookup if not exists
++        cursor.execute('''
++            CREATE TABLE IF NOT EXISTS dcb_lookup (
++                codigo_dcb TEXT PRIMARY KEY,
++                substancia TEXT NOT NULL,
++                substancia_normalizada TEXT,
++                cas TEXT,
++                classificacao TEXT,
++                status TEXT DEFAULT 'ATIVO'
++            )
++        ''')
++        cursor.execute('CREATE INDEX IF NOT EXISTS idx_dcb_substancia ON dcb_lookup (substancia_normalizada)')
++        
++        # Register SQLite UDF function to use the same Python classification rules in SQL
++        conn.create_function("get_control_list", 3, get_control_list)
++        
++        # Migration: Update all existing presentations to align with the ANVISA control list rules
++        logger.info("Running migration to update existing presentations to align with ANVISA control lists (A1-C5, AB)...")
++        cursor.execute('''
++            UPDATE presentations 
++            SET lista_controle = get_control_list(principio_ativo, classes_terapeuticas, nome_comercial)
++            WHERE lista_controle != get_control_list(principio_ativo, classes_terapeuticas, nome_comercial)
++        ''')
++        updated_rows = cursor.rowcount
++        if updated_rows > 0:
++            logger.info(f"Migration: Updated {updated_rows} presentations to their correct ANVISA control lists.")
++        
+         conn.commit()
+         conn.close()
+ 
++
+     @staticmethod
+     def clear_data():
+         """Deletes all data from the presentations table"""
+@@ -136,28 +272,61 @@ class Database:
+ 
+     @staticmethod
+     def save_bulk_codes(codes):
+-        """Saves bulk codes directly to SQLite bulk_products queue table"""
++        """
++        Saves and synchronizes bulk codes to SQLite bulk_products queue table.
++        If a code is new, it is inserted as PENDING.
++        If it exists but its data_atualizacao from ANVISA has changed, its status is set to PENDING (with retries=0).
++        Otherwise, it is kept as is (no change/ignored).
++        """
+         if not codes:
+             return
+         conn = Database._get_connection()
+         cursor = conn.cursor()
+         try:
+-            rows = []
++            new_count = 0
++            modified_count = 0
++            
+             for item in codes:
+                 if isinstance(item, dict):
+-                    c = item.get("codigoProduto")
++                    code = item.get("codigoProduto")
++                    date = item.get("dataAtualizacao")
+                 else:
+-                    c = item
+-                if c:
+-                    rows.append((c, 'PENDING'))
+-            cursor.executemany('''
+-                INSERT OR IGNORE INTO bulk_products (codigo_produto, status)
+-                VALUES (?, ?)
+-            ''', rows)
++                    code = item
++                    date = None
++                    
++                if not code:
++                    continue
++                
++                # Check if item exists in local queue
++                cursor.execute("SELECT status, data_atualizacao FROM bulk_products WHERE codigo_produto = ?", (code,))
++                row = cursor.fetchone()
++                
++                if not row:
++                    # New product: Insert as PENDING
++                    cursor.execute('''
++                        INSERT INTO bulk_products (codigo_produto, status, retries, data_atualizacao)
++                        VALUES (?, 'PENDING', 0, ?)
++                    ''', (code, date))
++                    new_count += 1
++                else:
++                    status, db_date = row
++                    # Modified product: if date differs, reset to PENDING and 0 retries
++                    if date and db_date != date:
++                        cursor.execute('''
++                            UPDATE bulk_products
++                            SET status = 'PENDING',
++                                retries = 0,
++                                data_atualizacao = ?,
++                                updated_at = CURRENT_TIMESTAMP
++                            WHERE codigo_produto = ?
++                        ''', (date, code))
++                        modified_count += 1
++                        
+             conn.commit()
+-            logger.info(f"Saved {len(rows)} bulk codes to SQLite bulk_products queue.")
++            if new_count > 0 or modified_count > 0:
++                logger.info(f"Sync Queue Complete: {new_count} new, {modified_count} modified products added/reset to PENDING.")
+         except Exception as e:
+-            logger.error(f"Error saving bulk codes: {e}")
++            logger.error(f"Error synchronizing bulk codes: {e}")
+             conn.rollback()
+         finally:
+             conn.close()
+@@ -255,8 +424,10 @@ class Database:
+             numero_autorizacao_empresa = empresa_obj.get("numeroAutorizacao")
+ 
+             if not apresentacoes:
++                reg_9 = str(numero_registro)[:9] if numero_registro else "N/A"
++                lista = get_control_list(principio_ativo, "", nome_comercial)
+                 rows.append((
+-                    codigo_produto, nome_comercial, numero_registro, "N/A", "N/A", "N/A", "N/A", principio_ativo, "", fabricante, "N/A", True,
++                    codigo_produto, nome_comercial, reg_9, "N/A", "N/A", "N/A", "N/A", principio_ativo, "", fabricante, lista, True,
+                     1, categoria_regulatoria, existe_bula, codigo_bula_paciente, codigo_bula_profissional, data_produto, data_vencimento_registro_produto, medicamento_referencia,
+                     cnpj_empresa, numero_autorizacao_empresa, "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A"
+                 ))
+@@ -273,14 +444,9 @@ class Database:
+                     classes = root.get("classesTerapeuticas", [])
+                     classes_str = ", ".join(classes) if isinstance(classes, list) else str(classes)
+                     
+-                    lista = "N/A"
+-                    for c in (classes if isinstance(classes, list) else [str(classes)]):
+-                        if "portaria 344" in c.lower() or "lista" in c.lower():
+-                            symbols = ["A1", "A2", "A3", "B1", "B2", "C1", "C2", "C3", "C4", "C5"]
+-                            for s in symbols:
+-                                 if s in c:
+-                                    lista = s
+-                                    break
++                    lista = get_control_list(principio_ativo, classes_str, nome_comercial)
++
++
+                     
+                     # Nested presentation lists to strings
+                     formas_farmaceuticas_list = apt.get("formasFarmaceuticas", [])
+@@ -304,8 +470,9 @@ class Database:
+                     # Unidade Medida calculation
+                     unidade_medida_medicamento = Database.get_unidade_medida_medicamento(apresentacao, formas_farmaceuticas_list, embalagem)
+                     
++                    reg_9 = str(numero_registro)[:9] if numero_registro else (apt.get("registro")[:9] if apt.get("registro") else "N/A")
+                     rows.append((
+-                        codigo_produto, nome_comercial, apt.get("registro"), apresentacao, embalagem, validade, tarja, principio_ativo, classes_str, fabricante, lista, ativa,
++                        codigo_produto, nome_comercial, reg_9, apresentacao, embalagem, validade, tarja, principio_ativo, classes_str, fabricante, lista, ativa,
+                         unidade_medida_medicamento, categoria_regulatoria, existe_bula, codigo_bula_paciente, codigo_bula_profissional, data_produto, data_vencimento_registro_produto, medicamento_referencia,
+                         cnpj_empresa, numero_autorizacao_empresa, apt.get("registro"), apt.get("apresentacaoFracionada"), formas_farmaceuticas, vias_administracao, apt.get("qtdUnidadeMedida"),
+                         conservacao, destinacao, apt.get("restricaoHospitais"), restricao_prescricao, restricao_uso
+@@ -378,14 +545,26 @@ class Database:
+                         WHERE codigo_produto = ?
+                     ''', (code,))
+                 else:
+-                    # Increment retries and mark as FAILED if limit reached (3 attempts)
+-                    cursor.execute('''
+-                        UPDATE bulk_products
+-                        SET retries = retries + 1,
+-                            status = CASE WHEN retries + 1 >= 3 THEN 'FAILED' ELSE 'PENDING' END,
+-                            updated_at = CURRENT_TIMESTAMP
+-                        WHERE codigo_produto = ?
+-                    ''', (code,))
++                    err_msg = str(result.get("error") or "").lower()
++                    is_rate_limit = "429" in err_msg or "403" in err_msg or "too many requests" in err_msg
++                    
++                    if is_rate_limit:
++                        # For rate limits, keep as PENDING without consuming retries budget
++                        cursor.execute('''
++                            UPDATE bulk_products
++                            SET status = 'PENDING',
++                                updated_at = CURRENT_TIMESTAMP
++                            WHERE codigo_produto = ?
++                        ''', (code,))
++                    else:
++                        # Increment retries and mark as FAILED if limit reached (5 attempts)
++                        cursor.execute('''
++                            UPDATE bulk_products
++                            SET retries = retries + 1,
++                                status = CASE WHEN retries + 1 >= 5 THEN 'FAILED' ELSE 'PENDING' END,
++                                updated_at = CURRENT_TIMESTAMP
++                            WHERE codigo_produto = ?
++                        ''', (code,))
+             
+             conn.commit()
+         except Exception as e:
+@@ -395,32 +574,50 @@ class Database:
+             conn.close()
+ 
+     @staticmethod
+-    def get_presentations(page=1, size=10, search_query=None):
++    def get_presentations(page=1, size=10, search_query=None, list_filter=None):
+         conn = Database._get_connection()
+         conn.row_factory = sqlite3.Row
+         cursor = conn.cursor()
+         
+         offset = (page - 1) * size
+-        where_clause = ""
++        where_clauses = []
+         params = []
+         
+         if search_query:
+-            where_clause = """
+-                WHERE nome_comercial LIKE ? 
++            where_clauses.append("""(
++                nome_comercial LIKE ? 
+                 OR principio_ativo LIKE ? 
+                 OR numero_registro LIKE ?
++                OR registro LIKE ?
+                 OR classes_terapeuticas LIKE ?
+                 OR tarja LIKE ?
+-            """
++            )""")
+             search_param = f"%{search_query}%"
+-            params = [search_param] * 5
++            params.extend([search_param] * 6)
++            
++        if list_filter:
++            where_clauses.append("lista_controle = ?")
++            params.append(list_filter)
++            
++        where_clause = ""
++        if where_clauses:
++            where_clause = "WHERE " + " AND ".join(where_clauses)
+             
+         params.extend([size, offset])
+         
+         cursor.execute(f'''
+-            SELECT * FROM presentations 
++            SELECT 
++                numero_registro,
++                nome_comercial,
++                principio_ativo,
++                fabricante,
++                MAX(ativa) as ativa,
++                COUNT(*) as qtd_apresentacoes,
++                MAX(updated_at) as updated_at
++            FROM presentations 
+             {where_clause}
+-            ORDER BY updated_at DESC, id DESC
++            GROUP BY numero_registro
++            ORDER BY updated_at DESC, numero_registro DESC
+             LIMIT ? OFFSET ?
+         ''', params)
+         
+@@ -430,23 +627,38 @@ class Database:
+         return result
+ 
+     @staticmethod
+-    def get_total_count(search_query=None):
++    def get_total_count(search_query=None, list_filter=None):
+         conn = Database._get_connection()
+         cursor = conn.cursor()
+         
++        where_clauses = []
++        params = []
++        
+         if search_query:
+-            search_param = f"%{search_query}%"
+-            cursor.execute('''
+-                SELECT COUNT(*) FROM presentations 
+-                WHERE nome_comercial LIKE ? 
++            where_clauses.append("""(
++                nome_comercial LIKE ? 
+                 OR principio_ativo LIKE ? 
+                 OR numero_registro LIKE ?
++                OR registro LIKE ?
+                 OR classes_terapeuticas LIKE ?
+                 OR tarja LIKE ?
+-            ''', (search_param, search_param, search_param, search_param, search_param))
+-        else:
+-            cursor.execute('SELECT COUNT(*) FROM presentations')
++            )""")
++            search_param = f"%{search_query}%"
++            params.extend([search_param] * 6)
++            
++        if list_filter:
++            where_clauses.append("lista_controle = ?")
++            params.append(list_filter)
+             
++        where_clause = ""
++        if where_clauses:
++            where_clause = "WHERE " + " AND ".join(where_clauses)
++            
++        cursor.execute(f'''
++            SELECT COUNT(DISTINCT numero_registro) FROM presentations 
++            {where_clause}
++        ''', params)
++        
+         count = cursor.fetchone()[0]
+         conn.close()
+         return count
+@@ -461,3 +673,94 @@ class Database:
+         result = [dict(row) for row in rows]
+         conn.close()
+         return result
++
++    @staticmethod
++    def get_presentations_by_ms(ms_code):
++        """Retrieves presentations matching either the 9-digit or 13-digit MS registration code"""
++        conn = Database._get_connection()
++        conn.row_factory = sqlite3.Row
++        cursor = conn.cursor()
++        
++        # Clean MS code to keep only digits
++        ms_clean = "".join(filter(str.isdigit, str(ms_code)))
++        
++        cursor.execute('''
++            SELECT * FROM presentations 
++            WHERE numero_registro = ? OR registro = ?
++            ORDER BY id ASC
++        ''', (ms_clean, ms_clean))
++        
++        rows = cursor.fetchall()
++        result = [dict(row) for row in rows]
++        conn.close()
++        return result
++
++    @staticmethod
++    def import_dcb_records(records):
++        """
++        Inserts or replaces DCB records in dcb_lookup table.
++        records: list of tuples (codigo_dcb, substancia, substancia_normalizada, cas, classificacao, status)
++        """
++        if not records:
++            return
++        conn = Database._get_connection()
++        cursor = conn.cursor()
++        try:
++            cursor.executemany('''
++                INSERT OR REPLACE INTO dcb_lookup (
++                    codigo_dcb, substancia, substancia_normalizada, cas, classificacao, status
++                ) VALUES (?, ?, ?, ?, ?, ?)
++            ''', records)
++            conn.commit()
++            logger.info(f"Imported {len(records)} DCB records into SQLite.")
++        except Exception as e:
++            logger.error(f"Error importing DCB records: {e}")
++            conn.rollback()
++        finally:
++            conn.close()
++
++    @staticmethod
++    def get_dcb_by_normalized_name(normalized_name):
++        """Finds DCB record matching the normalized name"""
++        conn = Database._get_connection()
++        conn.row_factory = sqlite3.Row
++        cursor = conn.cursor()
++        cursor.execute('''
++            SELECT * FROM dcb_lookup 
++            WHERE substancia_normalizada = ?
++        ''', (normalized_name,))
++        row = cursor.fetchone()
++        result = dict(row) if row else None
++        conn.close()
++        return result
++
++    @staticmethod
++    def get_dcb_by_cas(cas_number):
++        """Finds DCB record matching the CAS number"""
++        conn = Database._get_connection()
++        conn.row_factory = sqlite3.Row
++        cursor = conn.cursor()
++        cursor.execute('''
++            SELECT * FROM dcb_lookup 
++            WHERE cas = ?
++        ''', (cas_number,))
++        row = cursor.fetchone()
++        result = dict(row) if row else None
++        conn.close()
++        return result
++
++    @staticmethod
++    def search_dcb_by_pattern(pattern):
++        """Performs a LIKE search on normalized name"""
++        conn = Database._get_connection()
++        conn.row_factory = sqlite3.Row
++        cursor = conn.cursor()
++        cursor.execute('''
++            SELECT * FROM dcb_lookup 
++            WHERE substancia_normalizada LIKE ?
++        ''', (pattern,))
++        rows = cursor.fetchall()
++        result = [dict(row) for row in rows]
++        conn.close()
++        return result
++
+diff --git a/app/core/logger.py b/app/core/logger.py
+index 297343c..9765301 100644
+--- a/app/core/logger.py
++++ b/app/core/logger.py
+@@ -20,7 +20,8 @@ def setup_logging():
+         level=logging.INFO,
+         format=log_format,
+         handlers=[
+-            logging.FileHandler(log_file, encoding='utf-8'),
++            # Use mode='w' to truncate/clear the log file on startup
++            logging.FileHandler(log_file, mode='w', encoding='utf-8'),
+             logging.StreamHandler(sys.stdout)
+         ]
+     )
+diff --git a/app/services/orchestrator.py b/app/services/orchestrator.py
+index f23c524..a100b98 100644
+--- a/app/services/orchestrator.py
++++ b/app/services/orchestrator.py
+@@ -46,13 +46,13 @@ class ExtractionOrchestrator:
+             self.thread.join(timeout=10)
+             logger.info("Previous process stopped.")
+ 
+-    def start(self, reuse_bulk=False, num_workers=4):
++    def start(self, reuse_bulk=False, num_workers=4, inactive_only=False):
+         if self.thread and self.thread.is_alive():
+             logger.warning("Process already running. Killing it and starting new...")
+             self.stop()
+         
+         self.stop_event.clear()
+-        self.thread = threading.Thread(target=self._run_pipeline, args=(reuse_bulk, num_workers))
++        self.thread = threading.Thread(target=self._run_pipeline, args=(reuse_bulk, num_workers, inactive_only))
+         self.thread.start()
+         return True, "Started."
+ 
+@@ -65,7 +65,7 @@ class ExtractionOrchestrator:
+         with self._lock:
+             return self.status.copy()
+ 
+-    def _run_pipeline(self, reuse_bulk, num_workers):
++    def _run_pipeline(self, reuse_bulk, num_workers, inactive_only):
+         try:
+             with self._lock:
+                 self.status["startTime"] = time.time()
+@@ -92,7 +92,7 @@ class ExtractionOrchestrator:
+                 self._update_status("RUNNING_BULK", "Fetching product codes list...", 0, 0, 5)
+                 # Ensure we clear the old queue first if we are doing a fresh crawl
+                 Database.clear_bulk_codes()
+-                bulk = BulkScraper()
++                bulk = BulkScraper(inactive_only=inactive_only)
+                 
+                 def on_count_found(count):
+                     self._update_status("AWAITING_CONFIRMATION", f"Found {count} products.", count, 0, 5)
+@@ -132,6 +132,7 @@ class ExtractionOrchestrator:
+             # Dynamic Queue Worker Strategy
+             # num_workers is passed as parameter, defaulting to 4
+             if total_items == 0:
++                self._update_dcb_after_extraction(grand_total)
+                 self._update_status("COMPLETED", "All items processed successfully.", grand_total, grand_total, 100)
+                 return
+ 
+@@ -159,6 +160,7 @@ class ExtractionOrchestrator:
+             if self.stop_event.is_set():
+                 self._update_status("IDLE", "Extraction stopped by user.", grand_total, self.status["current"], self.status["percent"])
+             else:
++                self._update_dcb_after_extraction(grand_total)
+                 self._update_status("COMPLETED", "Extraction finished successfully.", grand_total, grand_total, 100)
+             
+         except Exception as e:
+@@ -181,9 +183,9 @@ class ExtractionOrchestrator:
+                 time.sleep(0.1)
+             
+             while not self.stop_event.is_set():
+-                # Get a sub-batch of up to 10 codes from the queue
++                # Get a sub-batch of up to 5 codes from the queue
+                 sub_batch = []
+-                for _ in range(10):
++                for _ in range(5):
+                     try:
+                         code = q.get_nowait()
+                         sub_batch.append(code)
+@@ -216,15 +218,15 @@ class ExtractionOrchestrator:
+                 
+                 if self.stop_event.is_set():
+                     break
+-
++ 
+                 # Check success rate for safety check
+                 success_count = len([c for c, r in results.items() if r["success"]])
+                 failure_count = len(sub_batch) - success_count
+                 
+                 if failure_count > (len(sub_batch) // 2) and len(sub_batch) > 1:
+-                    logger.warning(f"High failure rate detected ({failure_count}/{len(sub_batch)}). Possible soft block. Cooling down...")
+-                    # Interruptible sleep
+-                    for _ in range(100):
++                    logger.warning(f"High failure rate detected ({failure_count}/{len(sub_batch)}). Possible soft block. Cooling down for 30s...")
++                    # Interruptible sleep for 30 seconds
++                    for _ in range(300):
+                         if self.stop_event.is_set():
+                             break
+                         time.sleep(0.1)
+@@ -249,8 +251,8 @@ class ExtractionOrchestrator:
+                 for _ in range(len(sub_batch)):
+                     q.task_done()
+                 
+-                # Optimized polite delay (interruptible)
+-                delay = random.uniform(0.3, 0.7)
++                # Optimized polite delay (interruptible) - increased to 1.5s - 3.0s
++                delay = random.uniform(1.5, 3.0)
+                 for _ in range(int(delay * 10)):
+                     if self.stop_event.is_set():
+                         break
+@@ -279,3 +281,30 @@ class ExtractionOrchestrator:
+             self.status["current"] = current
+             self.status["percent"] = percent
+             self._calculate_elapsed_time_locked()
++
++    def _update_dcb_after_extraction(self, grand_total):
++        try:
++            self._update_status("RUNNING_DETAILS", "Atualizando Denomina├º├Áes Comuns Brasileiras (DCB)...", grand_total, grand_total, 99)
++            from app.services.dcb_service import DCBService
++            url = "https://bibliotecadigital.anvisa.gov.br/jspui/bitstream/anvisa/20673/3/1-%20Lista%20DCB%20consolidada%20abr%202026.xlsx"
++            dest_dir = r"data/dcb"
++            dest_file = os.path.join(dest_dir, "dcb_list.xlsx")
++            os.makedirs(dest_dir, exist_ok=True)
++            
++            import urllib.request
++            headers = {
++                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
++            }
++            req = urllib.request.Request(url, headers=headers)
++            logger.info("Auto-updating DCB database from Anvisa digital library...")
++            with urllib.request.urlopen(req, timeout=30) as response:
++                with open(dest_file, 'wb') as out_file:
++                    out_file.write(response.read())
++            
++            success, msg = DCBService.import_from_xlsx(dest_file)
++            if success:
++                logger.info("DCB database updated successfully.")
++            else:
++                logger.error(f"DCB database update failed: {msg}")
++        except Exception as dcb_err:
++            logger.error(f"Failed to auto-update DCB: {dcb_err}")
+diff --git a/app/services/scraper_bulk.py b/app/services/scraper_bulk.py
+index b6f4c04..af9a978 100644
+--- a/app/services/scraper_bulk.py
++++ b/app/services/scraper_bulk.py
+@@ -9,13 +9,14 @@ from app.core.database import Database
+ logger = get_logger("scraper_bulk")
+ 
+ class BulkScraper:
+-    def __init__(self):
++    def __init__(self, inactive_only=False):
++        self.inactive_only = inactive_only
+         self.output_file = "data/bulk_products.json"
+         self.base_url = "https://consultas.anvisa.gov.br/api/consulta/medicamento/produtos/"
+         self.default_params = {
+             "column": "",
+             "count": "100",
+-            "filter[situacaoRegistro]": "V",
++            "filter[situacaoRegistro]": "C" if inactive_only else "V",
+             "order": "asc",
+             "page": "1"
+         }
+@@ -127,7 +128,7 @@ class BulkScraper:
+                     items = data.get("content", [])
+                     if not items:
+                         break
+-                    
++                    page_codes = []
+                     for item in items:
+                         prod_info = item.get("produto") or {}
+                         code = prod_info.get("codigo")
+@@ -138,14 +139,25 @@ class BulkScraper:
+                         situacao = prod_info.get("situacaoApresentacao")
+                         acancelar = prod_info.get("acancelar")
+                         
+-                        if tipo == "REGISTRADO" and situacao == "Ativo" and not acancelar:
++                        if self.inactive_only:
++                            # For inactive registries, the presentation status might be 'Inativo' or 'Cancelado' or 'Ativo'
++                            is_valid = (tipo == "REGISTRADO" and situacao in ["Inativo", "Cancelado", "Ativo"])
++                        else:
++                            is_valid = (tipo == "REGISTRADO" and situacao == "Ativo" and not acancelar)
++
++                        if is_valid:
+                             if code:
+-                                all_codes.append({"codigoProduto": code})
++                                date_act = prod_info.get("dataAtualizacao")
++                                page_codes.append({"codigoProduto": code, "dataAtualizacao": date_act})
++                                all_codes.append({"codigoProduto": code, "dataAtualizacao": date_act})
+                         else:
+                             # Log first few skips for confirmation
+                             if len(all_codes) < 3:
+                                 logger.info(f"Skipped item {code} - Type: {tipo}, Status: {situacao}, CancelFlag: {acancelar}")
+                     
++                    if page_codes:
++                        Database.save_bulk_codes(page_codes)
++                    
+                     count = len(items)
+                     fetched_count += count
+                     items_since_renew += count
+@@ -168,8 +180,5 @@ class BulkScraper:
+         finally:
+             if driver:
+                 driver.quit()
+-            
+-            if all_codes:
+-                Database.save_bulk_codes(all_codes)
+         
+         return len(all_codes)
+diff --git a/app/services/scraper_single.py b/app/services/scraper_single.py
+index 3d3df59..dddab28 100644
+--- a/app/services/scraper_single.py
++++ b/app/services/scraper_single.py
+@@ -55,11 +55,15 @@ class SingleScraper:
+                             throw new Error('Malformed JSON: ' + e.message + ' (Snippet: ' + text.substring(0, 50) + '...)');
+                         }}
+                     }} catch (err) {{
+-                        if (i === retries) return {{ url: url, status: 'ERROR', message: err.toString() }};
++                        const errStr = err.toString();
++                        const isRateLimit = errStr.includes('Empty response') || errStr.includes('429') || errStr.includes('403');
+                         
+-                        // Smart Pause: Wait MUCH longer if it was an empty response (likely rate limit)
+-                        const isRateLimit = err.toString().includes('Empty response');
+-                        const baseWait = isRateLimit ? 3000 : 1500;
++                        // Fail fast on rate limits, let Python orchestrator handle the cooldown and retries
++                        if (isRateLimit || i === retries) {{
++                            return {{ url: url, status: 'ERROR', message: errStr }};
++                        }}
++                        
++                        const baseWait = 1500;
+                         const waitTime = (i + 1) * baseWait + Math.random() * 2000;
+                         
+                         await new Promise(r => setTimeout(r, waitTime));
+@@ -67,7 +71,11 @@ class SingleScraper:
+                 }}
+             }}
+ 
+-            Promise.all(urls.map(url => fetchWithRetry(url)))
++            // Stagger request starts by 200ms increments to avoid concurrency spikes
++            Promise.all(urls.map((url, index) => {{
++                return new Promise(resolve => setTimeout(resolve, index * 200))
++                    .then(() => fetchWithRetry(url));
++            }}))
+                 .then(results => callback(results))
+                 .catch(err => callback('GLOBAL_ERROR: ' + err));
+         """
+diff --git a/frontend/index.html b/frontend/index.html
+index 11ec2d9..0fb3b1f 100644
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -14,7 +14,7 @@
+         rel="stylesheet">
+ 
+     <!-- Styles -->
+-    <link rel="stylesheet" href="css/styles.css">
++    <link rel="stylesheet" href="css/styles.css?v=2.5.1">
+ </head>
+ 
+ <body>
+@@ -44,6 +44,15 @@
+                         </label>
+                     </div>
+ 
++                    <div style="margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
++                        <input type="checkbox" id="inactive-only-flag"
++                            style="accent-color: var(--text-primary); cursor: pointer;">
++                        <label for="inactive-only-flag"
++                            style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); cursor: pointer;">
++                            EXTRAIR APENAS DADOS INATIVOS
++                        </label>
++                    </div>
++
+                     <button id="start-btn" class="btn" onclick="startExtraction()">
+                         <span>INICIAR PROCESSO</span>
+                     </button>
+@@ -81,9 +90,27 @@
+                     <div id="connection-dot" class="status-dot active"></div>
+                     <span id="connection-text">SISTEMA CONECTADO</span>
+                 </div>
+-                <div class="status-indicator">
++                <div class="status-indicator" style="gap: 0;">
+                     <input type="text" id="search-input" placeholder="BUSCAR (NOME, PRINC├ìPIO, REGISTRO)..."
+-                        style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; width: 300px; text-transform: uppercase;">
++                        style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; width: 260px; text-transform: uppercase;">
++                    <select id="list-filter" 
++                        style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; background: var(--surface); color: var(--text-primary); cursor: pointer; text-transform: uppercase; margin-left: 8px; outline: none; transition: border-color 0.2s;"
++                        onmouseover="this.style.borderColor='var(--text-secondary)'"
++                        onmouseout="this.style.borderColor='var(--border)'">
++                        <option value="">TODAS AS LISTAS</option>
++                        <option value="A1">A1 (ENTORPECENTES)</option>
++                        <option value="A2">A2 (ENTORPECENTES)</option>
++                        <option value="A3">A3 (PSICOTR├ôPICOS)</option>
++                        <option value="B1">B1 (PSICOTR├ôPICOS)</option>
++                        <option value="B2">B2 (ANOREX├ìGENOS)</option>
++                        <option value="C1">C1 (CONTROLE ESPECIAL)</option>
++                        <option value="C2">C2 (RETIN├ôIDES)</option>
++                        <option value="C3">C3 (IMUNOSSUPRESSORES)</option>
++                        <option value="C4">C4 (ANTIRRETROVIRAIS)</option>
++                        <option value="C5">C5 (ANABOLIZANTES)</option>
++                        <option value="AB">AB (ANTIMICROBIANOS)</option>
++                        <option value="N/A">N/A (N├âO CONTROLADOS)</option>
++                    </select>
+                 </div>
+                 <div class="status-indicator">
+                     <span>REGISTROS TOTAIS: </span>
+@@ -97,11 +124,12 @@
+                         <thead>
+                             <tr>
+                                 <th>#</th>
+-                                <th>MS</th>
+-                                <th>SKU</th>
+-                                <th>MEDICAMENTO / DCB</th>
+-                                <th>APRESENTA├ç├âO / LABORAT├ôRIO</th>
+-                                <th>ATIVO / SNGPC</th>
++                                <th>MS (9 D├ìGITOS)</th>
++                                <th>MEDICAMENTO</th>
++                                <th>PRINC├ìPIO ATIVO (DCB)</th>
++                                <th>LABORAT├ôRIO / FABRICANTE</th>
++                                <th style="text-align: center;">APRESENTA├ç├òES</th>
++                                <th style="text-align: center;">ATIVO</th>
+                             </tr>
+                         </thead>
+                         <tbody>
+@@ -118,11 +146,6 @@
+ 
+                 <div id="pagination" class="pagination" style="display:none;"></div>
+             </div>
+-
+-            <!-- Terminal Footer -->
+-            <div id="terminal" class="log-terminal">
+-                <div class="log-line">Initializing console stream...</div>
+-            </div>
+         </main>
+     </div>
+ 
+@@ -214,6 +237,14 @@
+                         </div>
+                     </div>
+ 
++                    <!-- Section DCB: Denomina├º├Áes Comuns Brasileiras -->
++                    <div class="details-section" id="dcb-section" style="grid-column: span 2; display: none;">
++                        <h3>Denomina├º├úo Comum Brasileira (DCB)</h3>
++                        <div id="dcb-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 8px;">
++                            <!-- Injected by JS -->
++                        </div>
++                    </div>
++
+                     <!-- Section 3: Uso & Conserva├º├úo -->
+                     <div class="details-section" style="grid-column: span 2;">
+                         <h3>Uso, Conserva├º├úo & Restri├º├Áes</h3>
+@@ -284,7 +315,7 @@
+     </div>
+ 
+     <!-- Scripts -->
+-    <script src="js/app.js"></script>
++    <script src="js/app.js?v=2.6.0"></script>
+ </body>
+ 
+ </html>
+\ No newline at end of file
+diff --git a/frontend/js/app.js b/frontend/js/app.js
+index fe99cb6..251a342 100644
+--- a/frontend/js/app.js
++++ b/frontend/js/app.js
+@@ -14,16 +14,21 @@ document.getElementById('search-input').addEventListener('input', (e) => {
+     }, 400);
+ });
+ 
++document.getElementById('list-filter').addEventListener('change', () => {
++    loadResults(1);
++});
++
+ // --- Core Logic ---
+ async function startExtraction() {
+     setLoading(true);
+     isConfirming = false; // Reset lock for new run
+     const reuse = document.getElementById('reuse-flag').checked;
++    const inactiveOnly = document.getElementById('inactive-only-flag').checked;
+     try {
+         const res = await fetch('/api/extract', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+-            body: JSON.stringify({ reuse: reuse })
++            body: JSON.stringify({ reuse: reuse, inactive_only: inactiveOnly })
+         });
+         const data = await res.json();
+ 
+@@ -57,7 +62,6 @@ async function checkProgress() {
+             clearInterval(pollInterval);
+             setLoading(false);
+             loadResults(1);
+-            startLogPolling(10000);
+         } else if (status.state === 'ERROR') {
+             clearInterval(pollInterval);
+             setLoading(false);
+@@ -67,52 +71,7 @@ async function checkProgress() {
+     }
+ }
+ 
+-// --- Log Polling ---
+-async function startLogPolling(interval = 3000) {
+-    if (logPollInterval) clearInterval(logPollInterval);
+-    fetchLogs();
+-    logPollInterval = setInterval(fetchLogs, interval);
+-}
+-
+-async function fetchLogs() {
+-    try {
+-        const res = await fetch('/api/logs');
+-        const data = await res.json();
+-        renderLogs(data.lines);
+-    } catch (e) {
+-        console.error("Log fetch error", e);
+-    }
+-}
+-
+-function renderLogs(lines) {
+-    const terminal = document.getElementById('terminal');
+-    const isAtBottom = terminal.scrollHeight - terminal.clientHeight <= terminal.scrollTop + 50;
+-
+-    terminal.innerHTML = lines.map(line => {
+-        const parts = line.split(' - ');
+-        if (parts.length < 4) return `<div class="log-line">${line}</div>`;
+-
+-        const timestamp = parts[0];
+-        const module = parts[1];
+-        const level = parts[2];
+-        const message = parts.slice(3).join(' - ');
+-
+-        const levelClass = `level-${level.toLowerCase()}`;
+-
+-        return `
+-            <div class="log-line">
+-                <span class="timestamp">${timestamp}</span>
+-                [<span class="module">${module}</span>]
+-                <span class="${levelClass}">${level}</span>:
+-                <span class="message">${message}</span>
+-            </div>
+-        `;
+-    }).join('');
+-
+-    if (isAtBottom) {
+-        terminal.scrollTop = terminal.scrollHeight;
+-    }
+-}
++// --- Log Polling Removed ---
+ 
+ // --- UI Updates ---
+ function updateUI(status) {
+@@ -143,20 +102,25 @@ async function loadResults(page) {
+     const tbody = document.querySelector('#results-table tbody');
+     const empty = document.getElementById('empty-state');
+ 
+-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary); padding: 32px;">CARREGANDO DADOS...</td></tr>';
++    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-secondary); padding: 32px;">CARREGANDO DADOS...</td></tr>';
+     empty.style.display = 'none';
+ 
+     const searchQuery = document.getElementById('search-input').value;
+-    const url = searchQuery
+-        ? `/api/results?page=${page}&size=${pageSize}&q=${encodeURIComponent(searchQuery)}`
+-        : `/api/results?page=${page}&size=${pageSize}`;
++    const selectedList = document.getElementById('list-filter').value;
++    let url = `/api/results?page=${page}&size=${pageSize}`;
++    if (searchQuery) {
++        url += `&q=${encodeURIComponent(searchQuery)}`;
++    }
++    if (selectedList) {
++        url += `&list=${encodeURIComponent(selectedList)}`;
++    }
+ 
+     try {
+         const res = await fetch(url);
+         const data = await res.json();
+ 
+         if (data.totalElements > 0) {
+-            loadedPresentations = data.content;
++            loadedPresentations = []; // Reset loaded presentations array
+             empty.style.display = 'none';
+             document.getElementById('pagination').style.display = 'flex';
+             document.getElementById('total-badge').textContent = data.totalElements;
+@@ -166,25 +130,38 @@ async function loadResults(page) {
+             pBadge.textContent = `${data.totalElements} PRODUTOS NO BUFFER`;
+ 
+             tbody.innerHTML = data.content.map((item, index) => `
+-                <tr style="animation-delay: ${index * 0.05}s" onclick="showProductDetails(${item.id})">
++                <tr class="product-row" style="animation-delay: ${index * 0.05}s; cursor: pointer; border-bottom: 1px solid var(--border);" onclick="toggleProductRow(this, '${item.numero_registro}')">
+                     <td style="color: var(--text-secondary); font-size: 11px;">${index + 1 + (page - 1) * pageSize}</td>
+-                    <td style="font-family: var(--font-mono); font-size: 12px; color: var(--text-primary);">${item.numero_registro || '--'}</td>
+-                    <td style="font-family: var(--font-mono); font-size: 12px;">${item.codigo_produto || '--'}</td>
+-                    <td>
+-                        <div style="font-weight: 600; text-transform: uppercase;">${item.nome_comercial || '--'}</div>
+-                        <div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase; margin-top: 2px;">${item.principio_ativo || '--'}</div>
+-                    </td>
+-                    <td>
+-                        <div style="font-size: 11px;">${item.apresentacao || '--'}</div>
+-                        <div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase; margin-top: 2px;">${item.fabricante || '--'}</div>
+-                    </td>
+-                    <td style="text-align:center; white-space: nowrap;">
+-                        <span class="badge ${item.ativa ? 'badge-black' : 'badge-default'}">${item.ativa ? 'SIM' : 'N├âO'}</span>
+-                        ${item.unidade_medida_medicamento === 1 
+-                            ? '<span class="badge badge-black" style="background-color:#111111; color:#ffffff; border:1px solid #333; margin-left:4px;">CX (1)</span>' 
+-                            : item.unidade_medida_medicamento === 2 
+-                                ? '<span class="badge badge-yellow" style="margin-left:4px;">FR (2)</span>' 
+-                                : '<span class="badge badge-default" style="margin-left:4px;">--</span>'}
++                    <td style="font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); font-weight: 600;">${item.numero_registro || '--'}</td>
++                    <td style="font-weight: 600; text-transform: uppercase;">${item.nome_comercial || '--'}</td>
++                    <td style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary);">${item.principio_ativo || '--'}</td>
++                    <td style="font-size: 11px; text-transform: uppercase;">${item.fabricante || '--'}</td>
++                    <td style="text-align: center;"><span class="badge badge-default" style="background-color: var(--border); color: var(--text-primary); font-weight: 600; border: 1px solid var(--border);">${item.qtd_apresentacoes || 0}</span></td>
++                    <td style="text-align: center;"><span class="badge ${item.ativa ? 'badge-black' : 'badge-default'}">${item.ativa ? 'SIM' : 'N├âO'}</span></td>
++                </tr>
++                <tr class="details-expanded-row" id="exp-${item.numero_registro}" style="display: none;">
++                    <td colspan="7" style="padding: 16px 24px; background-color: rgba(255, 255, 255, 0.015); border-bottom: 1px solid var(--border);">
++                        <div class="expanded-container" style="border: 1px solid var(--border); border-radius: 4px; padding: 12px; background-color: var(--bg);">
++                            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); margin-bottom: 8px; letter-spacing: 0.05em; text-transform: uppercase;">Apresenta├º├Áes Vinculadas (MS 13 d├¡gitos)</div>
++                            <table class="nested-presentations-table" style="width: 100%; border-collapse: collapse; font-size: 11px;">
++                                <thead>
++                                    <tr style="border-bottom: 1px solid var(--border); text-align: left; color: var(--text-secondary); height: 28px;">
++                                        <th style="padding: 6px; font-weight: 500;">REGISTRO MS (13 D.)</th>
++                                        <th style="padding: 6px; font-weight: 500;">APRESENTA├ç├âO</th>
++                                        <th style="padding: 6px; font-weight: 500;">TARJA</th>
++                                        <th style="padding: 6px; font-weight: 500;">LISTA</th>
++                                        <th style="padding: 6px; font-weight: 500; text-align: center;">UNIDADE</th>
++                                        <th style="padding: 6px; font-weight: 500; text-align: center;">STATUS</th>
++                                        <th style="padding: 6px; font-weight: 500; text-align: center;">A├ç├òES</th>
++                                    </tr>
++                                </thead>
++                                <tbody class="presentations-list">
++                                    <tr>
++                                        <td colspan="7" style="text-align: center; padding: 12px; color: var(--text-secondary);">Carregando apresenta├º├Áes...</td>
++                                    </tr>
++                                </tbody>
++                            </table>
++                        </div>
+                     </td>
+                 </tr>
+             `).join('');
+@@ -202,6 +179,66 @@ async function loadResults(page) {
+     }
+ }
+ 
++async function toggleProductRow(rowElement, numeroRegistro) {
++    const expRow = document.getElementById('exp-' + numeroRegistro);
++    if (!expRow) return;
++
++    if (expRow.style.display === 'none') {
++        // Expand row
++        expRow.style.display = 'table-row';
++        rowElement.classList.add('expanded');
++        
++        const tbody = expRow.querySelector('.presentations-list');
++        if (tbody && tbody.getAttribute('data-loaded') !== 'true') {
++            try {
++                const res = await fetch('/api/ms/' + numeroRegistro);
++                const list = await res.json();
++                
++                if (list && list.length > 0) {
++                    // Cache results in loadedPresentations so showProductDetails can access them
++                    list.forEach(p => {
++                        if (!loadedPresentations.some(x => x.id === p.id)) {
++                            loadedPresentations.push(p);
++                        }
++                    });
++                    
++                    tbody.innerHTML = list.map(item => `
++                        <tr style="border-bottom: 1px solid var(--border); transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.02)'" onmouseout="this.style.backgroundColor='transparent'">
++                            <td style="padding: 8px 6px; font-family: var(--font-mono); font-weight: 500; color: var(--text-primary);">${item.registro || '--'}</td>
++                            <td style="padding: 8px 6px;">${item.apresentacao || '--'}</td>
++                            <td style="padding: 8px 6px;">${renderTarja(item.tarja)}</td>
++                            <td style="padding: 8px 6px;"><span class="badge badge-default">${item.lista_controle || '--'}</span></td>
++                            <td style="padding: 8px 6px; text-align: center;">
++                                ${item.unidade_medida_medicamento === 1 
++                                    ? '<span class="badge badge-black" style="background-color:#111111; color:#ffffff; border:1px solid #333;">CX (1)</span>' 
++                                    : item.unidade_medida_medicamento === 2 
++                                        ? '<span class="badge badge-yellow">FR (2)</span>' 
++                                        : '<span class="badge badge-default">--</span>'}
++                            </td>
++                            <td style="padding: 8px 6px; text-align: center;">
++                                <span class="badge ${item.ativa ? 'badge-black' : 'badge-default'}">${item.ativa ? 'ATIVO' : 'INATIVO'}</span>
++                            </td>
++                            <td style="padding: 8px 6px; text-align: center;">
++                                <button class="btn btn-secondary" style="font-size: 9px; padding: 4px 8px; height: auto;" onclick="event.stopPropagation(); showProductDetails(${item.id})">DETALHES</button>
++                            </td>
++                        </tr>
++                    `).join('');
++                    tbody.setAttribute('data-loaded', 'true');
++                } else {
++                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 12px; color: var(--text-secondary);">Nenhuma apresenta├º├úo encontrada.</td></tr>';
++                }
++            } catch (err) {
++                console.error(err);
++                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 12px; color: var(--text-red);">Erro ao carregar apresenta├º├Áes.</td></tr>';
++            }
++        }
++    } else {
++        // Collapse row
++        expRow.style.display = 'none';
++        rowElement.classList.remove('expanded');
++    }
++}
++
+ function renderPagination(totalPages, current) {
+     const container = document.getElementById('pagination');
+     container.innerHTML = '';
+@@ -282,7 +319,6 @@ async function abortExtraction() {
+ // Initial Bootstrap
+ document.addEventListener('DOMContentLoaded', () => {
+     loadResults(1);
+-    startLogPolling(3000);
+ });
+ 
+ // --- Product Details Modal ---
+@@ -338,6 +374,46 @@ function showProductDetails(id) {
+     document.getElementById('detail-bula-paciente').innerHTML = parseBula(item.codigo_bula_paciente);
+     document.getElementById('detail-bula-profissional').innerHTML = parseBula(item.codigo_bula_profissional);
+ 
++    // Section DCB: Denomina├º├Áes Comuns Brasileiras
++    const dcbSection = document.getElementById('dcb-section');
++    const dcbContainer = document.getElementById('dcb-container');
++    
++    if (item.dcb_list && item.dcb_list.length > 0) {
++        dcbSection.style.display = 'block';
++        dcbContainer.innerHTML = item.dcb_list.map(dcb => {
++            const isMatched = dcb.codigo_dcb !== 'N/A';
++            const badgeStyle = dcb.classificacao === 'IFA' 
++                ? 'background-color:#1b4d3e; color:#a3e635; border:1px solid #2e7d32;' 
++                : dcb.classificacao === 'BIO' 
++                    ? 'background-color:#0d47a1; color:#90caf9; border:1px solid #1565c0;' 
++                    : 'background-color:#333333; color:#cccccc; border:1px solid #444444;';
++                    
++            return `
++                <div class="dcb-card" style="border: 1px solid var(--border); padding: 12px; border-radius: 4px; background: rgba(255, 255, 255, 0.02); display: flex; flex-direction: column; gap: 8px;">
++                    <div style="display: flex; justify-content: space-between; align-items: center;">
++                        <span style="font-family: var(--font-mono); font-size: 13px; font-weight: bold; color: ${isMatched ? 'var(--text-primary)' : 'var(--error)'};">
++                            ${isMatched ? `DCB #${dcb.codigo_dcb}` : 'DCB N├âO ENCONTRADO'}
++                        </span>
++                        ${isMatched ? `<span class="badge" style="font-size: 9px; padding: 2px 6px; ${badgeStyle}">${dcb.classificacao}</span>` : ''}
++                    </div>
++                    <div class="detail-item" style="margin: 0; padding: 0;">
++                        <span class="detail-label" style="font-size: 9px; margin-bottom: 2px;">Subst├óncia</span>
++                        <span class="detail-value" style="font-size: 11px; text-transform: uppercase;">${dcb.substancia_oficial || '--'}</span>
++                    </div>
++                    ${dcb.cas && dcb.cas !== 'N/A' ? `
++                    <div class="detail-item" style="margin: 0; padding: 0;">
++                        <span class="detail-label" style="font-size: 9px; margin-bottom: 2px;">CAS</span>
++                        <span class="detail-value" style="font-family: var(--font-mono); font-size: 10px;">${dcb.cas}</span>
++                    </div>
++                    ` : ''}
++                </div>
++            `;
++        }).join('');
++    } else {
++        dcbSection.style.display = 'none';
++        dcbContainer.innerHTML = '';
++    }
++
+     // Open Modal
+     document.getElementById('details-modal').style.display = 'flex';
+ }
+diff --git a/main.py b/main.py
+index e367818..0fc5b13 100644
+--- a/main.py
++++ b/main.py
+@@ -17,7 +17,8 @@ def main():
+     scrape_parser.add_argument("code", help="Product Code (e.g., 832670)")
+ 
+     # Bulk Scrape Command
+-    subparsers.add_parser("bulk", help="Run bulk scraper")
++    bulk_parser = subparsers.add_parser("bulk", help="Run bulk scraper")
++    bulk_parser.add_argument("--inactive", action="store_true", help="Scrape only inactive registrations")
+ 
+     args = parser.parse_args()
+ 
+@@ -33,7 +34,7 @@ def main():
+         else:
+             print(f"Failed to scrape product {args.code}.")
+     elif args.command == "bulk":
+-        scraper = BulkScraper()
++        scraper = BulkScraper(inactive_only=args.inactive)
+         scraper.run()
+     else:
+         parser.print_help()

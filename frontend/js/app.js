@@ -14,6 +14,10 @@ document.getElementById('search-input').addEventListener('input', (e) => {
     }, 400);
 });
 
+document.getElementById('list-filter').addEventListener('change', () => {
+    loadResults(1);
+});
+
 // --- Core Logic ---
 async function startExtraction() {
     setLoading(true);
@@ -58,7 +62,6 @@ async function checkProgress() {
             clearInterval(pollInterval);
             setLoading(false);
             loadResults(1);
-            startLogPolling(10000);
         } else if (status.state === 'ERROR') {
             clearInterval(pollInterval);
             setLoading(false);
@@ -68,52 +71,7 @@ async function checkProgress() {
     }
 }
 
-// --- Log Polling ---
-async function startLogPolling(interval = 3000) {
-    if (logPollInterval) clearInterval(logPollInterval);
-    fetchLogs();
-    logPollInterval = setInterval(fetchLogs, interval);
-}
-
-async function fetchLogs() {
-    try {
-        const res = await fetch('/api/logs');
-        const data = await res.json();
-        renderLogs(data.lines);
-    } catch (e) {
-        console.error("Log fetch error", e);
-    }
-}
-
-function renderLogs(lines) {
-    const terminal = document.getElementById('terminal');
-    const isAtBottom = terminal.scrollHeight - terminal.clientHeight <= terminal.scrollTop + 50;
-
-    terminal.innerHTML = lines.map(line => {
-        const parts = line.split(' - ');
-        if (parts.length < 4) return `<div class="log-line">${line}</div>`;
-
-        const timestamp = parts[0];
-        const module = parts[1];
-        const level = parts[2];
-        const message = parts.slice(3).join(' - ');
-
-        const levelClass = `level-${level.toLowerCase()}`;
-
-        return `
-            <div class="log-line">
-                <span class="timestamp">${timestamp}</span>
-                [<span class="module">${module}</span>]
-                <span class="${levelClass}">${level}</span>:
-                <span class="message">${message}</span>
-            </div>
-        `;
-    }).join('');
-
-    if (isAtBottom) {
-        terminal.scrollTop = terminal.scrollHeight;
-    }
-}
+// --- Log Polling Removed ---
 
 // --- UI Updates ---
 function updateUI(status) {
@@ -144,20 +102,25 @@ async function loadResults(page) {
     const tbody = document.querySelector('#results-table tbody');
     const empty = document.getElementById('empty-state');
 
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary); padding: 32px;">CARREGANDO DADOS...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-secondary); padding: 32px;">CARREGANDO DADOS...</td></tr>';
     empty.style.display = 'none';
 
     const searchQuery = document.getElementById('search-input').value;
-    const url = searchQuery
-        ? `/api/results?page=${page}&size=${pageSize}&q=${encodeURIComponent(searchQuery)}`
-        : `/api/results?page=${page}&size=${pageSize}`;
+    const selectedList = document.getElementById('list-filter').value;
+    let url = `/api/results?page=${page}&size=${pageSize}`;
+    if (searchQuery) {
+        url += `&q=${encodeURIComponent(searchQuery)}`;
+    }
+    if (selectedList) {
+        url += `&list=${encodeURIComponent(selectedList)}`;
+    }
 
     try {
         const res = await fetch(url);
         const data = await res.json();
 
         if (data.totalElements > 0) {
-            loadedPresentations = data.content;
+            loadedPresentations = []; // Reset loaded presentations array
             empty.style.display = 'none';
             document.getElementById('pagination').style.display = 'flex';
             document.getElementById('total-badge').textContent = data.totalElements;
@@ -167,25 +130,38 @@ async function loadResults(page) {
             pBadge.textContent = `${data.totalElements} PRODUTOS NO BUFFER`;
 
             tbody.innerHTML = data.content.map((item, index) => `
-                <tr style="animation-delay: ${index * 0.05}s" onclick="showProductDetails(${item.id})">
+                <tr class="product-row" style="animation-delay: ${index * 0.05}s; cursor: pointer; border-bottom: 1px solid var(--border);" onclick="toggleProductRow(this, '${item.numero_registro}')">
                     <td style="color: var(--text-secondary); font-size: 11px;">${index + 1 + (page - 1) * pageSize}</td>
-                    <td style="font-family: var(--font-mono); font-size: 12px; color: var(--text-primary);">${item.numero_registro || '--'}</td>
-                    <td style="font-family: var(--font-mono); font-size: 12px;">${item.codigo_produto || '--'}</td>
-                    <td>
-                        <div style="font-weight: 600; text-transform: uppercase;">${item.nome_comercial || '--'}</div>
-                        <div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase; margin-top: 2px;">${item.principio_ativo || '--'}</div>
-                    </td>
-                    <td>
-                        <div style="font-size: 11px;">${item.apresentacao || '--'}</div>
-                        <div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase; margin-top: 2px;">${item.fabricante || '--'}</div>
-                    </td>
-                    <td style="text-align:center; white-space: nowrap;">
-                        <span class="badge ${item.ativa ? 'badge-black' : 'badge-default'}">${item.ativa ? 'SIM' : 'NÃO'}</span>
-                        ${item.unidade_medida_medicamento === 1 
-                            ? '<span class="badge badge-black" style="background-color:#111111; color:#ffffff; border:1px solid #333; margin-left:4px;">CX (1)</span>' 
-                            : item.unidade_medida_medicamento === 2 
-                                ? '<span class="badge badge-yellow" style="margin-left:4px;">FR (2)</span>' 
-                                : '<span class="badge badge-default" style="margin-left:4px;">--</span>'}
+                    <td style="font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); font-weight: 600;">${item.numero_registro || '--'}</td>
+                    <td style="font-weight: 600; text-transform: uppercase;">${item.nome_comercial || '--'}</td>
+                    <td style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary);">${item.principio_ativo || '--'}</td>
+                    <td style="font-size: 11px; text-transform: uppercase;">${item.fabricante || '--'}</td>
+                    <td style="text-align: center;"><span class="badge badge-default" style="background-color: var(--border); color: var(--text-primary); font-weight: 600; border: 1px solid var(--border);">${item.qtd_apresentacoes || 0}</span></td>
+                    <td style="text-align: center;"><span class="badge ${item.ativa ? 'badge-black' : 'badge-default'}">${item.ativa ? 'SIM' : 'NÃO'}</span></td>
+                </tr>
+                <tr class="details-expanded-row" id="exp-${item.numero_registro}" style="display: none;">
+                    <td colspan="7" style="padding: 16px 24px; background-color: rgba(255, 255, 255, 0.015); border-bottom: 1px solid var(--border);">
+                        <div class="expanded-container" style="border: 1px solid var(--border); border-radius: 4px; padding: 12px; background-color: var(--bg);">
+                            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); margin-bottom: 8px; letter-spacing: 0.05em; text-transform: uppercase;">Apresentações Vinculadas (MS 13 dígitos)</div>
+                            <table class="nested-presentations-table" style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                                <thead>
+                                    <tr style="border-bottom: 1px solid var(--border); text-align: left; color: var(--text-secondary); height: 28px;">
+                                        <th style="padding: 6px; font-weight: 500;">REGISTRO MS (13 D.)</th>
+                                        <th style="padding: 6px; font-weight: 500;">APRESENTAÇÃO</th>
+                                        <th style="padding: 6px; font-weight: 500;">TARJA</th>
+                                        <th style="padding: 6px; font-weight: 500;">LISTA</th>
+                                        <th style="padding: 6px; font-weight: 500; text-align: center;">UNIDADE</th>
+                                        <th style="padding: 6px; font-weight: 500; text-align: center;">STATUS</th>
+                                        <th style="padding: 6px; font-weight: 500; text-align: center;">AÇÕES</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="presentations-list">
+                                    <tr>
+                                        <td colspan="7" style="text-align: center; padding: 12px; color: var(--text-secondary);">Carregando apresentações...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </td>
                 </tr>
             `).join('');
@@ -200,6 +176,66 @@ async function loadResults(page) {
     } catch (e) {
         loadedPresentations = [];
         console.error(e);
+    }
+}
+
+async function toggleProductRow(rowElement, numeroRegistro) {
+    const expRow = document.getElementById('exp-' + numeroRegistro);
+    if (!expRow) return;
+
+    if (expRow.style.display === 'none') {
+        // Expand row
+        expRow.style.display = 'table-row';
+        rowElement.classList.add('expanded');
+        
+        const tbody = expRow.querySelector('.presentations-list');
+        if (tbody && tbody.getAttribute('data-loaded') !== 'true') {
+            try {
+                const res = await fetch('/api/ms/' + numeroRegistro);
+                const list = await res.json();
+                
+                if (list && list.length > 0) {
+                    // Cache results in loadedPresentations so showProductDetails can access them
+                    list.forEach(p => {
+                        if (!loadedPresentations.some(x => x.id === p.id)) {
+                            loadedPresentations.push(p);
+                        }
+                    });
+                    
+                    tbody.innerHTML = list.map(item => `
+                        <tr style="border-bottom: 1px solid var(--border); transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.02)'" onmouseout="this.style.backgroundColor='transparent'">
+                            <td style="padding: 8px 6px; font-family: var(--font-mono); font-weight: 500; color: var(--text-primary);">${item.registro || '--'}</td>
+                            <td style="padding: 8px 6px;">${item.apresentacao || '--'}</td>
+                            <td style="padding: 8px 6px;">${renderTarja(item.tarja)}</td>
+                            <td style="padding: 8px 6px;"><span class="badge badge-default">${item.lista_controle || '--'}</span></td>
+                            <td style="padding: 8px 6px; text-align: center;">
+                                ${item.unidade_medida_medicamento === 1 
+                                    ? '<span class="badge badge-black" style="background-color:#111111; color:#ffffff; border:1px solid #333;">CX (1)</span>' 
+                                    : item.unidade_medida_medicamento === 2 
+                                        ? '<span class="badge badge-yellow">FR (2)</span>' 
+                                        : '<span class="badge badge-default">--</span>'}
+                            </td>
+                            <td style="padding: 8px 6px; text-align: center;">
+                                <span class="badge ${item.ativa ? 'badge-black' : 'badge-default'}">${item.ativa ? 'ATIVO' : 'INATIVO'}</span>
+                            </td>
+                            <td style="padding: 8px 6px; text-align: center;">
+                                <button class="btn btn-secondary" style="font-size: 9px; padding: 4px 8px; height: auto;" onclick="event.stopPropagation(); showProductDetails(${item.id})">DETALHES</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                    tbody.setAttribute('data-loaded', 'true');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 12px; color: var(--text-secondary);">Nenhuma apresentação encontrada.</td></tr>';
+                }
+            } catch (err) {
+                console.error(err);
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 12px; color: var(--text-red);">Erro ao carregar apresentações.</td></tr>';
+            }
+        }
+    } else {
+        // Collapse row
+        expRow.style.display = 'none';
+        rowElement.classList.remove('expanded');
     }
 }
 
@@ -283,7 +319,6 @@ async function abortExtraction() {
 // Initial Bootstrap
 document.addEventListener('DOMContentLoaded', () => {
     loadResults(1);
-    startLogPolling(3000);
 });
 
 // --- Product Details Modal ---
@@ -338,6 +373,46 @@ function showProductDetails(id) {
     };
     document.getElementById('detail-bula-paciente').innerHTML = parseBula(item.codigo_bula_paciente);
     document.getElementById('detail-bula-profissional').innerHTML = parseBula(item.codigo_bula_profissional);
+
+    // Section DCB: Denominações Comuns Brasileiras
+    const dcbSection = document.getElementById('dcb-section');
+    const dcbContainer = document.getElementById('dcb-container');
+    
+    if (item.dcb_list && item.dcb_list.length > 0) {
+        dcbSection.style.display = 'block';
+        dcbContainer.innerHTML = item.dcb_list.map(dcb => {
+            const isMatched = dcb.codigo_dcb !== 'N/A';
+            const badgeStyle = dcb.classificacao === 'IFA' 
+                ? 'background-color:#1b4d3e; color:#a3e635; border:1px solid #2e7d32;' 
+                : dcb.classificacao === 'BIO' 
+                    ? 'background-color:#0d47a1; color:#90caf9; border:1px solid #1565c0;' 
+                    : 'background-color:#333333; color:#cccccc; border:1px solid #444444;';
+                    
+            return `
+                <div class="dcb-card" style="border: 1px solid var(--border); padding: 12px; border-radius: 4px; background: rgba(255, 255, 255, 0.02); display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-family: var(--font-mono); font-size: 13px; font-weight: bold; color: ${isMatched ? 'var(--text-primary)' : 'var(--error)'};">
+                            ${isMatched ? `DCB #${dcb.codigo_dcb}` : 'DCB NÃO ENCONTRADO'}
+                        </span>
+                        ${isMatched ? `<span class="badge" style="font-size: 9px; padding: 2px 6px; ${badgeStyle}">${dcb.classificacao}</span>` : ''}
+                    </div>
+                    <div class="detail-item" style="margin: 0; padding: 0;">
+                        <span class="detail-label" style="font-size: 9px; margin-bottom: 2px;">Substância</span>
+                        <span class="detail-value" style="font-size: 11px; text-transform: uppercase;">${dcb.substancia_oficial || '--'}</span>
+                    </div>
+                    ${dcb.cas && dcb.cas !== 'N/A' ? `
+                    <div class="detail-item" style="margin: 0; padding: 0;">
+                        <span class="detail-label" style="font-size: 9px; margin-bottom: 2px;">CAS</span>
+                        <span class="detail-value" style="font-family: var(--font-mono); font-size: 10px;">${dcb.cas}</span>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+    } else {
+        dcbSection.style.display = 'none';
+        dcbContainer.innerHTML = '';
+    }
 
     // Open Modal
     document.getElementById('details-modal').style.display = 'flex';

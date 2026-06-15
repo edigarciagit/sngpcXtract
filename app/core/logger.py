@@ -20,7 +20,8 @@ def setup_logging():
         level=logging.INFO,
         format=log_format,
         handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
+            # Use mode='w' to truncate/clear the log file on startup
+            logging.FileHandler(log_file, mode='w', encoding='utf-8'),
             logging.StreamHandler(sys.stdout)
         ]
     )

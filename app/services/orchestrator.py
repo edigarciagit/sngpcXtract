@@ -132,6 +132,7 @@ class ExtractionOrchestrator:
             # Dynamic Queue Worker Strategy
             # num_workers is passed as parameter, defaulting to 4
             if total_items == 0:
+                self._update_dcb_after_extraction(grand_total)
                 self._update_status("COMPLETED", "All items processed successfully.", grand_total, grand_total, 100)
                 return
 
@@ -159,6 +160,7 @@ class ExtractionOrchestrator:
             if self.stop_event.is_set():
                 self._update_status("IDLE", "Extraction stopped by user.", grand_total, self.status["current"], self.status["percent"])
             else:
+                self._update_dcb_after_extraction(grand_total)
                 self._update_status("COMPLETED", "Extraction finished successfully.", grand_total, grand_total, 100)
             
         except Exception as e:
@@ -181,9 +183,9 @@ class ExtractionOrchestrator:
                 time.sleep(0.1)
             
             while not self.stop_event.is_set():
-                # Get a sub-batch of up to 10 codes from the queue
+                # Get a sub-batch of up to 5 codes from the queue
                 sub_batch = []
-                for _ in range(10):
+                for _ in range(5):
                     try:
                         code = q.get_nowait()
                         sub_batch.append(code)
@@ -216,15 +218,15 @@ class ExtractionOrchestrator:
                 
                 if self.stop_event.is_set():
                     break
-
+ 
                 # Check success rate for safety check
                 success_count = len([c for c, r in results.items() if r["success"]])
                 failure_count = len(sub_batch) - success_count
                 
                 if failure_count > (len(sub_batch) // 2) and len(sub_batch) > 1:
-                    logger.warning(f"High failure rate detected ({failure_count}/{len(sub_batch)}). Possible soft block. Cooling down...")
-                    # Interruptible sleep
-                    for _ in range(100):
+                    logger.warning(f"High failure rate detected ({failure_count}/{len(sub_batch)}). Possible soft block. Cooling down for 30s...")
+                    # Interruptible sleep for 30 seconds
+                    for _ in range(300):
                         if self.stop_event.is_set():
                             break
                         time.sleep(0.1)
@@ -249,8 +251,8 @@ class ExtractionOrchestrator:
                 for _ in range(len(sub_batch)):
                     q.task_done()
                 
-                # Optimized polite delay (interruptible)
-                delay = random.uniform(0.3, 0.7)
+                # Optimized polite delay (interruptible) - increased to 1.5s - 3.0s
+                delay = random.uniform(1.5, 3.0)
                 for _ in range(int(delay * 10)):
                     if self.stop_event.is_set():
                         break
@@ -279,3 +281,30 @@ class ExtractionOrchestrator:
             self.status["current"] = current
             self.status["percent"] = percent
             self._calculate_elapsed_time_locked()
+
+    def _update_dcb_after_extraction(self, grand_total):
+        try:
+            self._update_status("RUNNING_DETAILS", "Atualizando Denominações Comuns Brasileiras (DCB)...", grand_total, grand_total, 99)
+            from app.services.dcb_service import DCBService
+            url = "https://bibliotecadigital.anvisa.gov.br/jspui/bitstream/anvisa/20673/3/1-%20Lista%20DCB%20consolidada%20abr%202026.xlsx"
+            dest_dir = r"data/dcb"
+            dest_file = os.path.join(dest_dir, "dcb_list.xlsx")
+            os.makedirs(dest_dir, exist_ok=True)
+            
+            import urllib.request
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            req = urllib.request.Request(url, headers=headers)
+            logger.info("Auto-updating DCB database from Anvisa digital library...")
+            with urllib.request.urlopen(req, timeout=30) as response:
+                with open(dest_file, 'wb') as out_file:
+                    out_file.write(response.read())
+            
+            success, msg = DCBService.import_from_xlsx(dest_file)
+            if success:
+                logger.info("DCB database updated successfully.")
+            else:
+                logger.error(f"DCB database update failed: {msg}")
+        except Exception as dcb_err:
+            logger.error(f"Failed to auto-update DCB: {dcb_err}")

@@ -147,8 +147,9 @@ class BulkScraper:
 
                         if is_valid:
                             if code:
-                                page_codes.append({"codigoProduto": code})
-                                all_codes.append({"codigoProduto": code})
+                                date_act = prod_info.get("dataAtualizacao")
+                                page_codes.append({"codigoProduto": code, "dataAtualizacao": date_act})
+                                all_codes.append({"codigoProduto": code, "dataAtualizacao": date_act})
                         else:
                             # Log first few skips for confirmation
                             if len(all_codes) < 3:

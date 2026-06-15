@@ -1,11 +1,116 @@
 import sqlite3
 import json
+import re
 from datetime import datetime
 from app.core.logger import get_logger
 
 logger = get_logger("database")
 
 DB_NAME = "sngpc.db"
+
+def get_control_list(principio_ativo, classes_str, nome_comercial):
+    # Normalize inputs
+    pa = (principio_ativo or "").upper()
+    cls = (classes_str or "").upper()
+    nome = (nome_comercial or "").upper()
+    
+    # 1. First, check if the commercial name or class contains the list explicitly
+    # e.g. "SULFATO DE MORFINA (PORT 344/98 LISTA A1)"
+    for s in ["A1", "A2", "A3", "B1", "B2", "C1", "C2", "C3", "C4", "C5"]:
+        pattern = rf"\bLISTA\s*[-–—]?\s*{s}\b"
+        if re.search(pattern, nome) or re.search(pattern, cls):
+            return s
+
+    # 2. Check by active ingredients (principio_ativo)
+    # A1 (Entorpecentes)
+    a1_substances = ["MORFINA", "METADONA", "FENTANIL", "OXICODONA", "PETIDINA", "REMIFENTANIL", "SUFENTANIL", "TAPENTADOL", "ALFENTANIL", "HIDROMORFONA"]
+    if any(s in pa for s in a1_substances):
+        return "A1"
+        
+    # A3 (Psicotrópicos estimulantes)
+    a3_substances = ["METILFENIDATO", "LISDEXANFETAMINA"]
+    if any(s in pa for s in a3_substances):
+        return "A3"
+        
+    # B1 (Psicotrópicos)
+    b1_substances = ["CLONAZEPAM", "DIAZEPAM", "ALPRAZOLAM", "LORAZEPAM", "MIDAZOLAM", "BROMAZEPAM", "FENOBARBITAL", "CLOBAZAM", "NITRAZEPAM", "FLURAZEPAM", "CLORDIAZEPÓXIDO", "CLORDIAZEPOXIDO", "CLOXAZOLAM", "ESTAZOLAM", "TRIAZOLAM", "OXAZEPAM", "KETAZOLAM"]
+    if any(s in pa for s in b1_substances):
+        return "B1"
+        
+    # B2 (Anorexígenos)
+    b2_substances = ["SIBUTRAMINA", "ANFEPRAMONA", "FEMPROPOREX", "MAZINDOL"]
+    if any(s in pa for s in b2_substances):
+        return "B2"
+
+    # C2 (Retinóides sistêmicos)
+    c2_substances = ["ISOTRETINOINA", "ISOTRETINOÍNA", "ACITRETINA"]
+    if any(s in pa for s in c2_substances):
+        return "C2"
+
+    # C3 (Imunossupressores)
+    c3_substances = ["TALIDOMIDA", "LENALIDOMIDA", "POMALIDOMIDA"]
+    if any(s in pa for s in c3_substances):
+        return "C3"
+
+    # C4 (Antirretrovirais)
+    c4_substances = ["ZIDOVUDINA", "LAMIVUDINA", "TENOFOVIR", "EFAVIRENZ", "NEVIRAPINA", "LOPINAVIR", "RITONAVIR", "ATAZANAVIR", "DARUNAVIR", "RALTEGRAVIR", "DOLUTEGRAVIR", "ABACAVIR", "ETRAVIRINA", "RILPIVIRINA", "EMTRICITABINA", "COBICISTATE", "ELVITEGRAVIR"]
+    if any(s in pa for s in c4_substances):
+        return "C4"
+
+    # C5 (Anabolizantes)
+    c5_substances = ["TESTOSTERONA", "ESTANOZOLOL", "NANDROLONA", "OXANDROLONA", "SOMATROPINA", "OXIMETOLONA", "MESTEROLONA"]
+    if any(s in pa for s in c5_substances):
+        return "C5"
+        
+    # A2 (Entorpecentes de uso permitido)
+    if "TRAMADOL" in pa:
+        if "A2" in nome or "A2" in cls:
+            return "A2"
+        return "C1"
+    if "CODEINA" in pa or "CODEÍNA" in pa:
+        if "A2" in nome or "A2" in cls:
+            return "A2"
+        return "C1"
+
+    # C1 (Outras substâncias sujeitas a controle especial)
+    c1_substances = [
+        "AMITRIPTILINA", "NORTRIPTILINA", "IMIPRAMINA", "CLOMIPRAMINA", "FLUOXETINA", "SERTRALINA", 
+        "PAROXETINA", "CITALOPRAM", "ESCITALOPRAM", "FLUVOXAMINA", "VENLAFAXINA", "DESVENLAFAXINA", 
+        "DULOXETINA", "BUPROPIONA", "MIRTAZAPINA", "AGOMELATINA", "TRAZODONA", "VORTIOXETINA", "MAPROTILINA",
+        "CLORPROMAZINA", "LEVOMEPROMAZINA", "HALOPERIDOL", "RISPERIDONA", "OLANZAPINA", "QUETIAPINA", 
+        "ARIPIPRAZOL", "ZIPRASIDONA", "CLOZAPINA", "SULPIRIDA", "PIMOZIDA", "ZUCLOPENTIXOL", "AMISULPRIDA", 
+        "CARIPRAZINA", "PALIPERIDONA", "LURASIDONA", "ASENAPINA",
+        "CARBAMAZEPINA", "ACIDO VALPROICO", "ÁCIDO VALPRÓICO", "VALPROATO", "DIVALPROATO", "TOPIRAMATO", 
+        "GABAPENTINA", "PREGABALINA", "LAMOTRIGINA", "FENITOINA", "FENITOÍNA", "OXCARBAZEPINA", "VIGABATRINA", 
+        "PRIMIDONA", "LACOSAMIDA", "LEVETIRACETAM", "BRIVARACETAM",
+        "PRAMIPEXOL", "ROPINIROL", "ROTIGOTINA", "SELEGILINA", "RASAGILINA", "BIPERIDENO",
+        "ZOLPIDEM", "ZOPICLONA", "ESZOPICLONA", "BUSPIRONA", "LITIO", "LÍTIO", "MEMANTINA", "DONEPEZILA", 
+        "RIVASTIGMINA", "GALANTAMINA", "HALOTANO", "ISOFLURANO", "SEVOFLURANO", "PROPOFOL", "CETAMINA"
+    ]
+    if any(s in pa for s in c1_substances):
+        return "C1"
+
+    # AB (Antimicrobianos)
+    antibiotic_keywords = ["ANTIBIOTICO", "ANTIBACTERIANO", "CEFALOSPORINA", "PENICILINA", "QUINOLONA", "RIFAMPICINA", "RIFAXIMINA", "SULFA", "TUBERCULOSTATICO", "TUBERCULOSE", "MACROLIDEO", "MACROLÍDEO"]
+    has_antibiotic_class = False
+    if any(kw in cls for kw in antibiotic_keywords):
+        has_antibiotic_class = True
+        
+    antibiotic_pas = [
+        "AMOXICILINA", "CEFALEXINA", "AZITROMICINA", "CIPROFLOXACINO", "CLARITROMICINA", 
+        "NEOMICINA", "ERITROMICINA", "METRONIDAZOL", "DOXICICLINA", "SULFAMETOXAZOL", 
+        "TRIMETOPRIMA", "AMPICILINA", "CEFALOTINA", "CEFTRIAXONA", "CLINDAMICINA", 
+        "GENTAMICINA", "LEVOFLOXACINO", "NORFLOXACINO", "OFLOXACINO", "TETRACICLINA", 
+        "RIFAMPICINA", "RIFAXIMINA", "LINEZOLIDA", "MEROPENEM", "IMIPENEM", 
+        "CILASTATINA", "VANCOMICINA", "TEICOPLANINA", "POLIMIXINA", "COLISTINA", 
+        "SULFADIAZINA", "NITROFURANTOINA", "MINOCICLINA", "CLORANFENICOL"
+    ]
+    has_antibiotic_pa = any(s in pa for s in antibiotic_pas)
+    
+    if has_antibiotic_class or has_antibiotic_pa:
+        return "AB"
+
+    return "N/A"
 
 class Database:
     @staticmethod
@@ -86,12 +191,15 @@ class Database:
             )
         ''')
         
-        # Check if table bulk_products has the retries column (for backward compatibility / migration)
+        # Check if table bulk_products has the retries and data_atualizacao columns (for backward compatibility / migration)
         cursor.execute("PRAGMA table_info(bulk_products)")
         columns = [col[1] for col in cursor.fetchall()]
         if 'retries' not in columns:
             logger.info("Migrating database bulk_products table: adding 'retries' column...")
             cursor.execute("ALTER TABLE bulk_products ADD COLUMN retries INTEGER DEFAULT 0")
+        if 'data_atualizacao' not in columns:
+            logger.info("Migrating database bulk_products table: adding 'data_atualizacao' column...")
+            cursor.execute("ALTER TABLE bulk_products ADD COLUMN data_atualizacao TEXT")
 
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_bulk_status ON bulk_products (status)')
 
@@ -103,8 +211,36 @@ class Database:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_fabricante_lookup ON presentations (fabricante)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ativa ON presentations (ativa)')
         
+        # Create table dcb_lookup if not exists
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS dcb_lookup (
+                codigo_dcb TEXT PRIMARY KEY,
+                substancia TEXT NOT NULL,
+                substancia_normalizada TEXT,
+                cas TEXT,
+                classificacao TEXT,
+                status TEXT DEFAULT 'ATIVO'
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_dcb_substancia ON dcb_lookup (substancia_normalizada)')
+        
+        # Register SQLite UDF function to use the same Python classification rules in SQL
+        conn.create_function("get_control_list", 3, get_control_list)
+        
+        # Migration: Update all existing presentations to align with the ANVISA control list rules
+        logger.info("Running migration to update existing presentations to align with ANVISA control lists (A1-C5, AB)...")
+        cursor.execute('''
+            UPDATE presentations 
+            SET lista_controle = get_control_list(principio_ativo, classes_terapeuticas, nome_comercial)
+            WHERE lista_controle != get_control_list(principio_ativo, classes_terapeuticas, nome_comercial)
+        ''')
+        updated_rows = cursor.rowcount
+        if updated_rows > 0:
+            logger.info(f"Migration: Updated {updated_rows} presentations to their correct ANVISA control lists.")
+        
         conn.commit()
         conn.close()
+
 
     @staticmethod
     def clear_data():
@@ -136,28 +272,61 @@ class Database:
 
     @staticmethod
     def save_bulk_codes(codes):
-        """Saves bulk codes directly to SQLite bulk_products queue table"""
+        """
+        Saves and synchronizes bulk codes to SQLite bulk_products queue table.
+        If a code is new, it is inserted as PENDING.
+        If it exists but its data_atualizacao from ANVISA has changed, its status is set to PENDING (with retries=0).
+        Otherwise, it is kept as is (no change/ignored).
+        """
         if not codes:
             return
         conn = Database._get_connection()
         cursor = conn.cursor()
         try:
-            rows = []
+            new_count = 0
+            modified_count = 0
+            
             for item in codes:
                 if isinstance(item, dict):
-                    c = item.get("codigoProduto")
+                    code = item.get("codigoProduto")
+                    date = item.get("dataAtualizacao")
                 else:
-                    c = item
-                if c:
-                    rows.append((c, 'PENDING'))
-            cursor.executemany('''
-                INSERT OR IGNORE INTO bulk_products (codigo_produto, status)
-                VALUES (?, ?)
-            ''', rows)
+                    code = item
+                    date = None
+                    
+                if not code:
+                    continue
+                
+                # Check if item exists in local queue
+                cursor.execute("SELECT status, data_atualizacao FROM bulk_products WHERE codigo_produto = ?", (code,))
+                row = cursor.fetchone()
+                
+                if not row:
+                    # New product: Insert as PENDING
+                    cursor.execute('''
+                        INSERT INTO bulk_products (codigo_produto, status, retries, data_atualizacao)
+                        VALUES (?, 'PENDING', 0, ?)
+                    ''', (code, date))
+                    new_count += 1
+                else:
+                    status, db_date = row
+                    # Modified product: if date differs, reset to PENDING and 0 retries
+                    if date and db_date != date:
+                        cursor.execute('''
+                            UPDATE bulk_products
+                            SET status = 'PENDING',
+                                retries = 0,
+                                data_atualizacao = ?,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE codigo_produto = ?
+                        ''', (date, code))
+                        modified_count += 1
+                        
             conn.commit()
-            logger.info(f"Saved {len(rows)} bulk codes to SQLite bulk_products queue.")
+            if new_count > 0 or modified_count > 0:
+                logger.info(f"Sync Queue Complete: {new_count} new, {modified_count} modified products added/reset to PENDING.")
         except Exception as e:
-            logger.error(f"Error saving bulk codes: {e}")
+            logger.error(f"Error synchronizing bulk codes: {e}")
             conn.rollback()
         finally:
             conn.close()
@@ -255,8 +424,10 @@ class Database:
             numero_autorizacao_empresa = empresa_obj.get("numeroAutorizacao")
 
             if not apresentacoes:
+                reg_9 = str(numero_registro)[:9] if numero_registro else "N/A"
+                lista = get_control_list(principio_ativo, "", nome_comercial)
                 rows.append((
-                    codigo_produto, nome_comercial, numero_registro, "N/A", "N/A", "N/A", "N/A", principio_ativo, "", fabricante, "N/A", True,
+                    codigo_produto, nome_comercial, reg_9, "N/A", "N/A", "N/A", "N/A", principio_ativo, "", fabricante, lista, True,
                     1, categoria_regulatoria, existe_bula, codigo_bula_paciente, codigo_bula_profissional, data_produto, data_vencimento_registro_produto, medicamento_referencia,
                     cnpj_empresa, numero_autorizacao_empresa, "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A"
                 ))
@@ -273,14 +444,9 @@ class Database:
                     classes = root.get("classesTerapeuticas", [])
                     classes_str = ", ".join(classes) if isinstance(classes, list) else str(classes)
                     
-                    lista = "N/A"
-                    for c in (classes if isinstance(classes, list) else [str(classes)]):
-                        if "portaria 344" in c.lower() or "lista" in c.lower():
-                            symbols = ["A1", "A2", "A3", "B1", "B2", "C1", "C2", "C3", "C4", "C5"]
-                            for s in symbols:
-                                 if s in c:
-                                    lista = s
-                                    break
+                    lista = get_control_list(principio_ativo, classes_str, nome_comercial)
+
+
                     
                     # Nested presentation lists to strings
                     formas_farmaceuticas_list = apt.get("formasFarmaceuticas", [])
@@ -304,8 +470,9 @@ class Database:
                     # Unidade Medida calculation
                     unidade_medida_medicamento = Database.get_unidade_medida_medicamento(apresentacao, formas_farmaceuticas_list, embalagem)
                     
+                    reg_9 = str(numero_registro)[:9] if numero_registro else (apt.get("registro")[:9] if apt.get("registro") else "N/A")
                     rows.append((
-                        codigo_produto, nome_comercial, apt.get("registro"), apresentacao, embalagem, validade, tarja, principio_ativo, classes_str, fabricante, lista, ativa,
+                        codigo_produto, nome_comercial, reg_9, apresentacao, embalagem, validade, tarja, principio_ativo, classes_str, fabricante, lista, ativa,
                         unidade_medida_medicamento, categoria_regulatoria, existe_bula, codigo_bula_paciente, codigo_bula_profissional, data_produto, data_vencimento_registro_produto, medicamento_referencia,
                         cnpj_empresa, numero_autorizacao_empresa, apt.get("registro"), apt.get("apresentacaoFracionada"), formas_farmaceuticas, vias_administracao, apt.get("qtdUnidadeMedida"),
                         conservacao, destinacao, apt.get("restricaoHospitais"), restricao_prescricao, restricao_uso
@@ -378,14 +545,26 @@ class Database:
                         WHERE codigo_produto = ?
                     ''', (code,))
                 else:
-                    # Increment retries and mark as FAILED if limit reached (3 attempts)
-                    cursor.execute('''
-                        UPDATE bulk_products
-                        SET retries = retries + 1,
-                            status = CASE WHEN retries + 1 >= 3 THEN 'FAILED' ELSE 'PENDING' END,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE codigo_produto = ?
-                    ''', (code,))
+                    err_msg = str(result.get("error") or "").lower()
+                    is_rate_limit = "429" in err_msg or "403" in err_msg or "too many requests" in err_msg
+                    
+                    if is_rate_limit:
+                        # For rate limits, keep as PENDING without consuming retries budget
+                        cursor.execute('''
+                            UPDATE bulk_products
+                            SET status = 'PENDING',
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE codigo_produto = ?
+                        ''', (code,))
+                    else:
+                        # Increment retries and mark as FAILED if limit reached (5 attempts)
+                        cursor.execute('''
+                            UPDATE bulk_products
+                            SET retries = retries + 1,
+                                status = CASE WHEN retries + 1 >= 5 THEN 'FAILED' ELSE 'PENDING' END,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE codigo_produto = ?
+                        ''', (code,))
             
             conn.commit()
         except Exception as e:
@@ -395,32 +574,50 @@ class Database:
             conn.close()
 
     @staticmethod
-    def get_presentations(page=1, size=10, search_query=None):
+    def get_presentations(page=1, size=10, search_query=None, list_filter=None):
         conn = Database._get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
         offset = (page - 1) * size
-        where_clause = ""
+        where_clauses = []
         params = []
         
         if search_query:
-            where_clause = """
-                WHERE nome_comercial LIKE ? 
+            where_clauses.append("""(
+                nome_comercial LIKE ? 
                 OR principio_ativo LIKE ? 
                 OR numero_registro LIKE ?
+                OR registro LIKE ?
                 OR classes_terapeuticas LIKE ?
                 OR tarja LIKE ?
-            """
+            )""")
             search_param = f"%{search_query}%"
-            params = [search_param] * 5
+            params.extend([search_param] * 6)
+            
+        if list_filter:
+            where_clauses.append("lista_controle = ?")
+            params.append(list_filter)
+            
+        where_clause = ""
+        if where_clauses:
+            where_clause = "WHERE " + " AND ".join(where_clauses)
             
         params.extend([size, offset])
         
         cursor.execute(f'''
-            SELECT * FROM presentations 
+            SELECT 
+                numero_registro,
+                nome_comercial,
+                principio_ativo,
+                fabricante,
+                MAX(ativa) as ativa,
+                COUNT(*) as qtd_apresentacoes,
+                MAX(updated_at) as updated_at
+            FROM presentations 
             {where_clause}
-            ORDER BY updated_at DESC, id DESC
+            GROUP BY numero_registro
+            ORDER BY updated_at DESC, numero_registro DESC
             LIMIT ? OFFSET ?
         ''', params)
         
@@ -430,23 +627,38 @@ class Database:
         return result
 
     @staticmethod
-    def get_total_count(search_query=None):
+    def get_total_count(search_query=None, list_filter=None):
         conn = Database._get_connection()
         cursor = conn.cursor()
         
+        where_clauses = []
+        params = []
+        
         if search_query:
-            search_param = f"%{search_query}%"
-            cursor.execute('''
-                SELECT COUNT(*) FROM presentations 
-                WHERE nome_comercial LIKE ? 
+            where_clauses.append("""(
+                nome_comercial LIKE ? 
                 OR principio_ativo LIKE ? 
                 OR numero_registro LIKE ?
+                OR registro LIKE ?
                 OR classes_terapeuticas LIKE ?
                 OR tarja LIKE ?
-            ''', (search_param, search_param, search_param, search_param, search_param))
-        else:
-            cursor.execute('SELECT COUNT(*) FROM presentations')
+            )""")
+            search_param = f"%{search_query}%"
+            params.extend([search_param] * 6)
             
+        if list_filter:
+            where_clauses.append("lista_controle = ?")
+            params.append(list_filter)
+            
+        where_clause = ""
+        if where_clauses:
+            where_clause = "WHERE " + " AND ".join(where_clauses)
+            
+        cursor.execute(f'''
+            SELECT COUNT(DISTINCT numero_registro) FROM presentations 
+            {where_clause}
+        ''', params)
+        
         count = cursor.fetchone()[0]
         conn.close()
         return count
@@ -461,3 +673,94 @@ class Database:
         result = [dict(row) for row in rows]
         conn.close()
         return result
+
+    @staticmethod
+    def get_presentations_by_ms(ms_code):
+        """Retrieves presentations matching either the 9-digit or 13-digit MS registration code"""
+        conn = Database._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Clean MS code to keep only digits
+        ms_clean = "".join(filter(str.isdigit, str(ms_code)))
+        
+        cursor.execute('''
+            SELECT * FROM presentations 
+            WHERE numero_registro = ? OR registro = ?
+            ORDER BY id ASC
+        ''', (ms_clean, ms_clean))
+        
+        rows = cursor.fetchall()
+        result = [dict(row) for row in rows]
+        conn.close()
+        return result
+
+    @staticmethod
+    def import_dcb_records(records):
+        """
+        Inserts or replaces DCB records in dcb_lookup table.
+        records: list of tuples (codigo_dcb, substancia, substancia_normalizada, cas, classificacao, status)
+        """
+        if not records:
+            return
+        conn = Database._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.executemany('''
+                INSERT OR REPLACE INTO dcb_lookup (
+                    codigo_dcb, substancia, substancia_normalizada, cas, classificacao, status
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            ''', records)
+            conn.commit()
+            logger.info(f"Imported {len(records)} DCB records into SQLite.")
+        except Exception as e:
+            logger.error(f"Error importing DCB records: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_dcb_by_normalized_name(normalized_name):
+        """Finds DCB record matching the normalized name"""
+        conn = Database._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM dcb_lookup 
+            WHERE substancia_normalizada = ?
+        ''', (normalized_name,))
+        row = cursor.fetchone()
+        result = dict(row) if row else None
+        conn.close()
+        return result
+
+    @staticmethod
+    def get_dcb_by_cas(cas_number):
+        """Finds DCB record matching the CAS number"""
+        conn = Database._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM dcb_lookup 
+            WHERE cas = ?
+        ''', (cas_number,))
+        row = cursor.fetchone()
+        result = dict(row) if row else None
+        conn.close()
+        return result
+
+    @staticmethod
+    def search_dcb_by_pattern(pattern):
+        """Performs a LIKE search on normalized name"""
+        conn = Database._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM dcb_lookup 
+            WHERE substancia_normalizada LIKE ?
+        ''', (pattern,))
+        rows = cursor.fetchall()
+        result = [dict(row) for row in rows]
+        conn.close()
+        return result
+

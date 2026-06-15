@@ -55,11 +55,15 @@ class SingleScraper:
                             throw new Error('Malformed JSON: ' + e.message + ' (Snippet: ' + text.substring(0, 50) + '...)');
                         }}
                     }} catch (err) {{
-                        if (i === retries) return {{ url: url, status: 'ERROR', message: err.toString() }};
+                        const errStr = err.toString();
+                        const isRateLimit = errStr.includes('Empty response') || errStr.includes('429') || errStr.includes('403');
                         
-                        // Smart Pause: Wait MUCH longer if it was an empty response (likely rate limit)
-                        const isRateLimit = err.toString().includes('Empty response');
-                        const baseWait = isRateLimit ? 3000 : 1500;
+                        // Fail fast on rate limits, let Python orchestrator handle the cooldown and retries
+                        if (isRateLimit || i === retries) {{
+                            return {{ url: url, status: 'ERROR', message: errStr }};
+                        }}
+                        
+                        const baseWait = 1500;
                         const waitTime = (i + 1) * baseWait + Math.random() * 2000;
                         
                         await new Promise(r => setTimeout(r, waitTime));
@@ -67,7 +71,11 @@ class SingleScraper:
                 }}
             }}
 
-            Promise.all(urls.map(url => fetchWithRetry(url)))
+            // Stagger request starts by 200ms increments to avoid concurrency spikes
+            Promise.all(urls.map((url, index) => {{
+                return new Promise(resolve => setTimeout(resolve, index * 200))
+                    .then(() => fetchWithRetry(url));
+            }}))
                 .then(results => callback(results))
                 .catch(err => callback('GLOBAL_ERROR: ' + err));
         """

@@ -14,7 +14,7 @@
         rel="stylesheet">
 
     <!-- Styles -->
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/styles.css?v=2.5.1">
 </head>
 
 <body>
@@ -90,9 +90,27 @@
                     <div id="connection-dot" class="status-dot active"></div>
                     <span id="connection-text">SISTEMA CONECTADO</span>
                 </div>
-                <div class="status-indicator">
+                <div class="status-indicator" style="gap: 0;">
                     <input type="text" id="search-input" placeholder="BUSCAR (NOME, PRINCÍPIO, REGISTRO)..."
-                        style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; width: 300px; text-transform: uppercase;">
+                        style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; width: 260px; text-transform: uppercase;">
+                    <select id="list-filter" 
+                        style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; background: var(--surface); color: var(--text-primary); cursor: pointer; text-transform: uppercase; margin-left: 8px; outline: none; transition: border-color 0.2s;"
+                        onmouseover="this.style.borderColor='var(--text-secondary)'"
+                        onmouseout="this.style.borderColor='var(--border)'">
+                        <option value="">TODAS AS LISTAS</option>
+                        <option value="A1">A1 (ENTORPECENTES)</option>
+                        <option value="A2">A2 (ENTORPECENTES)</option>
+                        <option value="A3">A3 (PSICOTRÓPICOS)</option>
+                        <option value="B1">B1 (PSICOTRÓPICOS)</option>
+                        <option value="B2">B2 (ANOREXÍGENOS)</option>
+                        <option value="C1">C1 (CONTROLE ESPECIAL)</option>
+                        <option value="C2">C2 (RETINÓIDES)</option>
+                        <option value="C3">C3 (IMUNOSSUPRESSORES)</option>
+                        <option value="C4">C4 (ANTIRRETROVIRAIS)</option>
+                        <option value="C5">C5 (ANABOLIZANTES)</option>
+                        <option value="AB">AB (ANTIMICROBIANOS)</option>
+                        <option value="N/A">N/A (NÃO CONTROLADOS)</option>
+                    </select>
                 </div>
                 <div class="status-indicator">
                     <span>REGISTROS TOTAIS: </span>
@@ -106,11 +124,12 @@
                         <thead>
                             <tr>
                                 <th>#</th>
-                                <th>MS</th>
-                                <th>SKU</th>
-                                <th>MEDICAMENTO / DCB</th>
-                                <th>APRESENTAÇÃO / LABORATÓRIO</th>
-                                <th>ATIVO / SNGPC</th>
+                                <th>MS (9 DÍGITOS)</th>
+                                <th>MEDICAMENTO</th>
+                                <th>PRINCÍPIO ATIVO (DCB)</th>
+                                <th>LABORATÓRIO / FABRICANTE</th>
+                                <th style="text-align: center;">APRESENTAÇÕES</th>
+                                <th style="text-align: center;">ATIVO</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -126,11 +145,6 @@
                 </div>
 
                 <div id="pagination" class="pagination" style="display:none;"></div>
-            </div>
-
-            <!-- Terminal Footer -->
-            <div id="terminal" class="log-terminal">
-                <div class="log-line">Initializing console stream...</div>
             </div>
         </main>
     </div>
@@ -223,6 +237,14 @@
                         </div>
                     </div>
 
+                    <!-- Section DCB: Denominações Comuns Brasileiras -->
+                    <div class="details-section" id="dcb-section" style="grid-column: span 2; display: none;">
+                        <h3>Denominação Comum Brasileira (DCB)</h3>
+                        <div id="dcb-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 8px;">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+
                     <!-- Section 3: Uso & Conservação -->
                     <div class="details-section" style="grid-column: span 2;">
                         <h3>Uso, Conservação & Restrições</h3>
@@ -293,7 +315,7 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/app.js"></script>
+    <script src="js/app.js?v=2.6.0"></script>
 </body>
 
 </html>

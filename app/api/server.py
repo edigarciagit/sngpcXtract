@@ -18,9 +18,12 @@ PORT = 8000
 
 class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        logger.debug(f"GET Request: {self.path}")
+        logger.info(f"GET Request: {self.path}")
         if self.path == "/" or self.path == "/index.html":
             self.path = "/frontend/index.html"
+            super().do_GET()
+        elif self.path == "/api-docs" or self.path == "/api-docs/" or self.path == "/docs" or self.path == "/docs/":
+            self.path = "/frontend/swagger.html"
             super().do_GET()
         elif self.path.startswith("/frontend/"):
             super().do_GET()
@@ -34,6 +37,8 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_export()
         elif self.path == '/api/logs':
             self.handle_logs()
+        elif self.path.startswith('/api/ms/'):
+            self.handle_ms()
         else:
             # Fallback
             if not self.path.startswith("/frontend/") and not self.path.startswith("/api/"):
@@ -41,14 +46,21 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
+        logger.info(f"POST Request: {self.path}")
         if self.path == '/api/extract':
             self.handle_extract()
         elif self.path == '/api/confirm':
             self.handle_confirm()
         elif self.path == '/api/stop':
             self.handle_stop()
+        elif self.path == '/api/dcb/import':
+            self.handle_dcb_import()
         else:
             self.send_error(404, "Not Found")
+
+    def log_message(self, format, *args):
+        # Redirect standard HTTP server logs to python logger
+        logger.info(f"HTTP Server - {self.address_string()} - {format % args}")
 
     def handle_extract(self):
         content_len = int(self.headers.get('Content-Length', 0))
@@ -85,6 +97,7 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         orchestrator = ExtractionOrchestrator()
         success, msg = orchestrator.confirm_extraction(proceed=proceed)
+        logger.info(f"Extraction confirmation received: proceed={proceed}. Result: success={success}, msg={msg}")
         
         self.send_response(200 if success else 400)
         self.send_header('Content-type', 'application/json')
@@ -94,11 +107,24 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def handle_stop(self):
         orchestrator = ExtractionOrchestrator()
         orchestrator.stop()
+        logger.info("Extraction stop signal processed.")
         
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps({"success": True, "message": "Stop signal sent."}).encode('utf-8'))
+
+    def handle_dcb_import(self):
+        from app.services.dcb_service import DCBService
+        logger.info("DCB manual import triggered via POST /api/dcb/import")
+        success, msg = DCBService.import_from_xlsx()
+        logger.info(f"DCB manual import finished. Result: success={success}, msg={msg}")
+        
+        self.send_response(200 if success else 500)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps({"success": success, "message": msg}).encode('utf-8'))
 
     def handle_progress(self):
         orchestrator = ExtractionOrchestrator()
@@ -117,12 +143,14 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             size = int(params.get('size', [10])[0])
             
             search_query = params.get('search', [None])[0] or params.get('q', [None])[0]
+            list_filter = params.get('list', [None])[0]
+            logger.info(f"Fetching presentations results: page={page}, size={size}, query='{search_query}', list_filter='{list_filter}'")
             
             # Retrieve from DB
-            total_items = Database.get_total_count(search_query)
+            total_items = Database.get_total_count(search_query, list_filter)
             total_pages = math.ceil(total_items / size) if size > 0 else 1
             
-            paged_items = Database.get_presentations(page, size, search_query)
+            paged_items = Database.get_presentations(page, size, search_query, list_filter)
             
             response = {
                 "content": paged_items,
@@ -142,8 +170,36 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             logger.error(f"Error handling results API: {e}")
             self.send_error(500, str(e))
 
+    def handle_ms(self):
+        try:
+            parts = self.path.split('/')
+            if len(parts) >= 4 and parts[3]:
+                ms_code = parts[3]
+                if '?' in ms_code:
+                    ms_code = ms_code.split('?')[0]
+                
+                logger.info(f"Querying product details for MS code: {ms_code}")
+                presentations = Database.get_presentations_by_ms(ms_code)
+                
+                # Enrich with DCB details
+                from app.services.dcb_service import DCBService
+                for p in presentations:
+                    p["dcb_list"] = DCBService.get_dcb_details_for_product(p.get("principio_ativo"))
+                
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps(presentations).encode('utf-8'))
+            else:
+                self.send_error(400, "Bad Request: Missing MS registration code in path.")
+        except Exception as e:
+            logger.error(f"Error handling MS query API: {e}")
+            self.send_error(500, str(e))
+
     def handle_export(self):
         try:
+            logger.info("Exporting all presentations to CSV file.")
             # Retrieve all data
             data = Database.get_all_presentations_raw()
             
@@ -240,6 +296,21 @@ def run_server():
     socketserver.TCPServer.allow_reuse_address = True
     # Initialize DB on startup
     Database.init_db()
+    
+    # Auto-import DCB list on startup if empty
+    try:
+        conn = Database._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM dcb_lookup")
+        count = cursor.fetchone()[0]
+        conn.close()
+        if count == 0:
+            logger.info("DCB database table is empty. Auto-importing DCB entries...")
+            from app.services.dcb_service import DCBService
+            DCBService.import_from_xlsx()
+    except Exception as e:
+        logger.error(f"Error checking/auto-importing DCB on startup: {e}")
+        
     with socketserver.TCPServer(("", PORT), ProxyHTTPRequestHandler) as httpd:
         logger.info(f"API Server started and listening at http://localhost:{PORT}")
         httpd.serve_forever()
