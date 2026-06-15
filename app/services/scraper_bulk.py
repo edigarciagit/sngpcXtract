@@ -9,13 +9,14 @@ from app.core.database import Database
 logger = get_logger("scraper_bulk")
 
 class BulkScraper:
-    def __init__(self):
+    def __init__(self, inactive_only=False):
+        self.inactive_only = inactive_only
         self.output_file = "data/bulk_products.json"
         self.base_url = "https://consultas.anvisa.gov.br/api/consulta/medicamento/produtos/"
         self.default_params = {
             "column": "",
             "count": "100",
-            "filter[situacaoRegistro]": "V",
+            "filter[situacaoRegistro]": "C" if inactive_only else "V",
             "order": "asc",
             "page": "1"
         }
@@ -127,7 +128,7 @@ class BulkScraper:
                     items = data.get("content", [])
                     if not items:
                         break
-                    
+                    page_codes = []
                     for item in items:
                         prod_info = item.get("produto") or {}
                         code = prod_info.get("codigo")
@@ -138,13 +139,23 @@ class BulkScraper:
                         situacao = prod_info.get("situacaoApresentacao")
                         acancelar = prod_info.get("acancelar")
                         
-                        if tipo == "REGISTRADO" and situacao == "Ativo" and not acancelar:
+                        if self.inactive_only:
+                            # For inactive registries, the presentation status might be 'Inativo' or 'Cancelado' or 'Ativo'
+                            is_valid = (tipo == "REGISTRADO" and situacao in ["Inativo", "Cancelado", "Ativo"])
+                        else:
+                            is_valid = (tipo == "REGISTRADO" and situacao == "Ativo" and not acancelar)
+
+                        if is_valid:
                             if code:
+                                page_codes.append({"codigoProduto": code})
                                 all_codes.append({"codigoProduto": code})
                         else:
                             # Log first few skips for confirmation
                             if len(all_codes) < 3:
                                 logger.info(f"Skipped item {code} - Type: {tipo}, Status: {situacao}, CancelFlag: {acancelar}")
+                    
+                    if page_codes:
+                        Database.save_bulk_codes(page_codes)
                     
                     count = len(items)
                     fetched_count += count
@@ -168,8 +179,5 @@ class BulkScraper:
         finally:
             if driver:
                 driver.quit()
-            
-            if all_codes:
-                Database.save_bulk_codes(all_codes)
         
         return len(all_codes)

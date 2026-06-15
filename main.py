@@ -17,7 +17,8 @@ def main():
     scrape_parser.add_argument("code", help="Product Code (e.g., 832670)")
 
     # Bulk Scrape Command
-    subparsers.add_parser("bulk", help="Run bulk scraper")
+    bulk_parser = subparsers.add_parser("bulk", help="Run bulk scraper")
+    bulk_parser.add_argument("--inactive", action="store_true", help="Scrape only inactive registrations")
 
     args = parser.parse_args()
 
@@ -33,7 +34,7 @@ def main():
         else:
             print(f"Failed to scrape product {args.code}.")
     elif args.command == "bulk":
-        scraper = BulkScraper()
+        scraper = BulkScraper(inactive_only=args.inactive)
         scraper.run()
     else:
         parser.print_help()

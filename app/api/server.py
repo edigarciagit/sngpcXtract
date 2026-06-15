@@ -56,11 +56,13 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         try:
             params = json.loads(post_body.decode('utf-8'))
             reuse_bulk = params.get('reuse', False)
+            inactive_only = params.get('inactive_only', False)
         except:
             reuse_bulk = False
+            inactive_only = False
 
         orchestrator = ExtractionOrchestrator()
-        success, msg = orchestrator.start(reuse_bulk=reuse_bulk)
+        success, msg = orchestrator.start(reuse_bulk=reuse_bulk, inactive_only=inactive_only)
         
         self.send_response(200 if success else 400)
         self.send_header('Content-type', 'application/json')

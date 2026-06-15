@@ -19,11 +19,12 @@ async function startExtraction() {
     setLoading(true);
     isConfirming = false; // Reset lock for new run
     const reuse = document.getElementById('reuse-flag').checked;
+    const inactiveOnly = document.getElementById('inactive-only-flag').checked;
     try {
         const res = await fetch('/api/extract', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reuse: reuse })
+            body: JSON.stringify({ reuse: reuse, inactive_only: inactiveOnly })
         });
         const data = await res.json();
 

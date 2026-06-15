@@ -46,13 +46,13 @@ class ExtractionOrchestrator:
             self.thread.join(timeout=10)
             logger.info("Previous process stopped.")
 
-    def start(self, reuse_bulk=False, num_workers=4):
+    def start(self, reuse_bulk=False, num_workers=4, inactive_only=False):
         if self.thread and self.thread.is_alive():
             logger.warning("Process already running. Killing it and starting new...")
             self.stop()
         
         self.stop_event.clear()
-        self.thread = threading.Thread(target=self._run_pipeline, args=(reuse_bulk, num_workers))
+        self.thread = threading.Thread(target=self._run_pipeline, args=(reuse_bulk, num_workers, inactive_only))
         self.thread.start()
         return True, "Started."
 
@@ -65,7 +65,7 @@ class ExtractionOrchestrator:
         with self._lock:
             return self.status.copy()
 
-    def _run_pipeline(self, reuse_bulk, num_workers):
+    def _run_pipeline(self, reuse_bulk, num_workers, inactive_only):
         try:
             with self._lock:
                 self.status["startTime"] = time.time()
@@ -92,7 +92,7 @@ class ExtractionOrchestrator:
                 self._update_status("RUNNING_BULK", "Fetching product codes list...", 0, 0, 5)
                 # Ensure we clear the old queue first if we are doing a fresh crawl
                 Database.clear_bulk_codes()
-                bulk = BulkScraper()
+                bulk = BulkScraper(inactive_only=inactive_only)
                 
                 def on_count_found(count):
                     self._update_status("AWAITING_CONFIRMATION", f"Found {count} products.", count, 0, 5)
