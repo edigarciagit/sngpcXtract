@@ -79,72 +79,121 @@
 
         <!-- Main Data View -->
         <main>
-            <div style="padding: 16px 32px 0; display: flex; justify-content: flex-end; align-items: center;">
-                <div id="pending-badge" class="badge badge-red" style="display: none;">
-                    -- PRODUTOS NO BUFFER
-                </div>
+            <!-- Tabs Navigation -->
+            <div class="tabs-header">
+                <button id="tab-btn-database" class="tab-btn active" onclick="switchTab('database')">BASE DE MEDICAMENTOS</button>
+                <button id="tab-btn-reports" class="tab-btn" onclick="switchTab('reports')">RELATÓRIOS DIÁRIOS</button>
             </div>
 
-            <div class="status-bar">
-                <div class="status-indicator">
-                    <div id="connection-dot" class="status-dot active"></div>
-                    <span id="connection-text">SISTEMA CONECTADO</span>
-                </div>
-                <div class="status-indicator" style="gap: 0;">
-                    <input type="text" id="search-input" placeholder="BUSCAR (NOME, PRINCÍPIO, REGISTRO)..."
-                        style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; width: 260px; text-transform: uppercase;">
-                    <select id="list-filter" 
-                        style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; background: var(--surface); color: var(--text-primary); cursor: pointer; text-transform: uppercase; margin-left: 8px; outline: none; transition: border-color 0.2s;"
-                        onmouseover="this.style.borderColor='var(--text-secondary)'"
-                        onmouseout="this.style.borderColor='var(--border)'">
-                        <option value="">TODAS AS LISTAS</option>
-                        <option value="A1">A1 (ENTORPECENTES)</option>
-                        <option value="A2">A2 (ENTORPECENTES)</option>
-                        <option value="A3">A3 (PSICOTRÓPICOS)</option>
-                        <option value="B1">B1 (PSICOTRÓPICOS)</option>
-                        <option value="B2">B2 (ANOREXÍGENOS)</option>
-                        <option value="C1">C1 (CONTROLE ESPECIAL)</option>
-                        <option value="C2">C2 (RETINÓIDES)</option>
-                        <option value="C3">C3 (IMUNOSSUPRESSORES)</option>
-                        <option value="C4">C4 (ANTIRRETROVIRAIS)</option>
-                        <option value="C5">C5 (ANABOLIZANTES)</option>
-                        <option value="AB">AB (ANTIMICROBIANOS)</option>
-                        <option value="N/A">N/A (NÃO CONTROLADOS)</option>
-                    </select>
-                </div>
-                <div class="status-indicator">
-                    <span>REGISTROS TOTAIS: </span>
-                    <span id="total-badge" style="color: var(--text-primary); margin-left:8px;">--</span>
-                </div>
-            </div>
-
-            <div class="data-container">
-                <div style="flex: 1; overflow: auto;">
-                    <table id="results-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>MS (9 DÍGITOS)</th>
-                                <th>MEDICAMENTO</th>
-                                <th>PRINCÍPIO ATIVO (DCB)</th>
-                                <th>LABORATÓRIO / FABRICANTE</th>
-                                <th style="text-align: center;">APRESENTAÇÕES</th>
-                                <th style="text-align: center;">ATIVO</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- Rows injected here by JavaScript -->
-                        </tbody>
-                    </table>
-
-                    <div id="empty-state" class="empty-state">
-                        <p style="font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.05em;">
-                            NENHUM DADO CARREGADO NO BUFFER
-                        </p>
+            <!-- Database View Tab Content -->
+            <div id="database-view" class="tab-content active">
+                <div style="padding: 16px 32px 0; display: flex; justify-content: flex-end; align-items: center; background: var(--surface);">
+                    <div id="pending-badge" class="badge badge-red" style="display: none;">
+                        -- PRODUTOS NO BUFFER
                     </div>
                 </div>
 
-                <div id="pagination" class="pagination" style="display:none;"></div>
+                <div class="status-bar">
+                    <div class="status-indicator">
+                        <div id="connection-dot" class="status-dot active"></div>
+                        <span id="connection-text">SISTEMA CONECTADO</span>
+                    </div>
+                    <div class="status-indicator" style="gap: 0;">
+                        <input type="text" id="search-input" placeholder="BUSCAR (NOME, PRINCÍPIO, REGISTRO)..."
+                            style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; width: 260px; text-transform: uppercase;">
+                        <select id="list-filter" 
+                            style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; background: var(--surface); color: var(--text-primary); cursor: pointer; text-transform: uppercase; margin-left: 8px; outline: none; transition: border-color 0.2s;"
+                            onmouseover="this.style.borderColor='var(--text-secondary)'"
+                            onmouseout="this.style.borderColor='var(--border)'">
+                            <option value="">TODAS AS LISTAS</option>
+                            <option value="A1">A1 (ENTORPECENTES)</option>
+                            <option value="A2">A2 (ENTORPECENTES)</option>
+                            <option value="A3">A3 (PSICOTRÓPICOS)</option>
+                            <option value="B1">B1 (PSICOTRÓPICOS)</option>
+                            <option value="B2">B2 (ANOREXÍGENOS)</option>
+                            <option value="C1">C1 (CONTROLE ESPECIAL)</option>
+                            <option value="C2">C2 (RETINÓIDES)</option>
+                            <option value="C3">C3 (IMUNOSSUPRESSORES)</option>
+                            <option value="C4">C4 (ANTIRRETROVIRAIS)</option>
+                            <option value="C5">C5 (ANABOLIZANTES)</option>
+                            <option value="AB">AB (ANTIMICROBIANOS)</option>
+                            <option value="N/A">N/A (NÃO CONTROLADOS)</option>
+                        </select>
+                    </div>
+                    <div class="status-indicator">
+                        <span>REGISTROS TOTAIS: </span>
+                        <span id="total-badge" style="color: var(--text-primary); margin-left:8px;">--</span>
+                    </div>
+                </div>
+
+                <div class="data-container">
+                    <div style="flex: 1; overflow: auto;">
+                        <table id="results-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>MS (9 DÍGITOS)</th>
+                                    <th>MEDICAMENTO</th>
+                                    <th>PRINCÍPIO ATIVO (DCB)</th>
+                                    <th>LABORATÓRIO / FABRICANTE</th>
+                                    <th style="text-align: center;">APRESENTAÇÕES</th>
+                                    <th style="text-align: center;">ATIVO</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Rows injected here by JavaScript -->
+                            </tbody>
+                        </table>
+
+                        <div id="empty-state" class="empty-state">
+                            <p style="font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.05em;">
+                                NENHUM DADO CARREGADO NO BUFFER
+                            </p>
+                        </div>
+                    </div>
+
+                    <div id="pagination" class="pagination" style="display:none;"></div>
+                </div>
+            </div>
+
+            <!-- Reports View Tab Content -->
+            <div id="reports-view" class="tab-content">
+                <div class="status-bar">
+                    <div class="status-indicator">
+                        <span>RELATÓRIOS DE SINCRONIZAÇÃO DIÁRIOS</span>
+                    </div>
+                    <div class="status-indicator">
+                        <button class="btn btn-secondary" onclick="loadReportsList()" style="padding: 8px 16px; font-size: 11px;">
+                            ATUALIZAR LISTA
+                        </button>
+                    </div>
+                </div>
+
+                <div class="data-container">
+                    <div style="flex: 1; overflow: auto;">
+                        <table id="reports-table">
+                            <thead>
+                                <tr>
+                                    <th>DATA</th>
+                                    <th>ID DO RELATÓRIO</th>
+                                    <th>DURAÇÃO</th>
+                                    <th>ESTADO</th>
+                                    <th style="text-align: center;">BULK / SUCESSO / FALHA</th>
+                                    <th style="text-align: center;">NOVOS / ATUALIZADOS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Injected by JS -->
+                            </tbody>
+                        </table>
+
+                        <div id="reports-empty-state" class="empty-state">
+                            <p style="font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.05em;">
+                                NENHUM RELATÓRIO DE SINCRONIZAÇÃO ENCONTRADO
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
@@ -310,6 +359,114 @@
             </div>
             <div class="modal-footer" style="border-top: 1px solid var(--border); padding-top: 16px;">
                 <button class="btn btn-secondary" onclick="closeDetailsModal()">FECHAR</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Details Modal -->
+    <div id="report-details-modal" class="modal-overlay" style="display: none;" onclick="handleReportDetailsModalClick(event)">
+        <div class="modal-content details-modal" style="width: 900px; max-width: 95vw;">
+            <div class="modal-header" style="border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px;">
+                <div class="brand" style="margin-bottom: 4px;">DETALHES DA SINCRONIZAÇÃO</div>
+                <h2 id="report-details-title" style="font-size: 18px; font-weight: 600; text-transform: uppercase; margin-top: 8px;">RELATÓRIO: --</h2>
+                <div id="report-details-subtitle" style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px; text-transform: uppercase;">--</div>
+            </div>
+            <div class="modal-body" style="max-height: 500px; overflow-y: auto; padding-right: 8px; margin-bottom: 24px;">
+                <div class="details-grid" style="grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+                    <div class="details-section">
+                        <h3>Sumário de Execução</h3>
+                        <div class="detail-item">
+                            <span class="detail-label">Data de Execução</span>
+                            <span class="detail-value" id="rep-date">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Hora Início</span>
+                            <span class="detail-value" id="rep-start-time">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Hora Fim</span>
+                            <span class="detail-value" id="rep-end-time">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Duração</span>
+                            <span class="detail-value" id="rep-duration">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Status</span>
+                            <span class="detail-value" id="rep-status">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Mensagem</span>
+                            <span class="detail-value" id="rep-message">--</span>
+                        </div>
+                    </div>
+                    <div class="details-section">
+                        <h3>Métricas e Resultados</h3>
+                        <div class="detail-item">
+                            <span class="detail-label">Total de Medicamentos (Bulk)</span>
+                            <span class="detail-value" id="rep-total-bulk">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Coletados com Sucesso</span>
+                            <span class="detail-value" id="rep-scraped-success">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Falhas de Coleta</span>
+                            <span class="detail-value" id="rep-scraped-failed">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Novas Apresentações</span>
+                            <span class="detail-value" id="rep-new-count">--</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Apresentações Atualizadas</span>
+                            <span class="detail-value" id="rep-updated-count">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="details-section" style="margin-bottom: 24px;">
+                    <h3>Novas Apresentações Cadastradas</h3>
+                    <div style="max-height: 150px; overflow-y: auto; border: 1px solid var(--border); background: var(--bg); border-radius: 4px; padding: 8px;">
+                        <table id="rep-new-table" style="font-size: 11px;">
+                            <thead>
+                                <tr style="background: transparent; position: relative;">
+                                    <th>REGISTRO MS</th>
+                                    <th>MEDICAMENTO</th>
+                                    <th>PRINCÍPIO ATIVO</th>
+                                    <th>FABRICANTE</th>
+                                    <th>LISTA</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Injected by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="details-section">
+                    <h3>Apresentações Atualizadas (Alterações)</h3>
+                    <div style="max-height: 150px; overflow-y: auto; border: 1px solid var(--border); background: var(--bg); border-radius: 4px; padding: 8px;">
+                        <table id="rep-updated-table" style="font-size: 11px;">
+                            <thead>
+                                <tr style="background: transparent; position: relative;">
+                                    <th>REGISTRO MS</th>
+                                    <th>MEDICAMENTO</th>
+                                    <th>CAMPO</th>
+                                    <th>VALOR ANTERIOR</th>
+                                    <th>NOVO VALOR</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Injected by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="border-top: 1px solid var(--border); padding-top: 16px;">
+                <button class="btn btn-secondary" onclick="closeReportDetailsModal()">FECHAR</button>
             </div>
         </div>
     </div>

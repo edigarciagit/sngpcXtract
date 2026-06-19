@@ -14,6 +14,9 @@ def get_control_list(principio_ativo, classes_str, nome_comercial):
     cls = (classes_str or "").upper()
     nome = (nome_comercial or "").upper()
     
+    def match_substance(substances_list):
+        return any(re.search(rf"\b{re.escape(s)}\b", pa) for s in substances_list)
+    
     # 1. First, check if the commercial name or class contains the list explicitly
     # e.g. "SULFATO DE MORFINA (PORT 344/98 LISTA A1)"
     for s in ["A1", "A2", "A3", "B1", "B2", "C1", "C2", "C3", "C4", "C5"]:
@@ -24,50 +27,50 @@ def get_control_list(principio_ativo, classes_str, nome_comercial):
     # 2. Check by active ingredients (principio_ativo)
     # A1 (Entorpecentes)
     a1_substances = ["MORFINA", "METADONA", "FENTANIL", "OXICODONA", "PETIDINA", "REMIFENTANIL", "SUFENTANIL", "TAPENTADOL", "ALFENTANIL", "HIDROMORFONA"]
-    if any(s in pa for s in a1_substances):
+    if match_substance(a1_substances):
         return "A1"
         
     # A3 (Psicotrópicos estimulantes)
     a3_substances = ["METILFENIDATO", "LISDEXANFETAMINA"]
-    if any(s in pa for s in a3_substances):
+    if match_substance(a3_substances):
         return "A3"
         
     # B1 (Psicotrópicos)
     b1_substances = ["CLONAZEPAM", "DIAZEPAM", "ALPRAZOLAM", "LORAZEPAM", "MIDAZOLAM", "BROMAZEPAM", "FENOBARBITAL", "CLOBAZAM", "NITRAZEPAM", "FLURAZEPAM", "CLORDIAZEPÓXIDO", "CLORDIAZEPOXIDO", "CLOXAZOLAM", "ESTAZOLAM", "TRIAZOLAM", "OXAZEPAM", "KETAZOLAM"]
-    if any(s in pa for s in b1_substances):
+    if match_substance(b1_substances):
         return "B1"
         
     # B2 (Anorexígenos)
     b2_substances = ["SIBUTRAMINA", "ANFEPRAMONA", "FEMPROPOREX", "MAZINDOL"]
-    if any(s in pa for s in b2_substances):
+    if match_substance(b2_substances):
         return "B2"
 
     # C2 (Retinóides sistêmicos)
     c2_substances = ["ISOTRETINOINA", "ISOTRETINOÍNA", "ACITRETINA"]
-    if any(s in pa for s in c2_substances):
+    if match_substance(c2_substances):
         return "C2"
 
     # C3 (Imunossupressores)
     c3_substances = ["TALIDOMIDA", "LENALIDOMIDA", "POMALIDOMIDA"]
-    if any(s in pa for s in c3_substances):
+    if match_substance(c3_substances):
         return "C3"
 
     # C4 (Antirretrovirais)
     c4_substances = ["ZIDOVUDINA", "LAMIVUDINA", "TENOFOVIR", "EFAVIRENZ", "NEVIRAPINA", "LOPINAVIR", "RITONAVIR", "ATAZANAVIR", "DARUNAVIR", "RALTEGRAVIR", "DOLUTEGRAVIR", "ABACAVIR", "ETRAVIRINA", "RILPIVIRINA", "EMTRICITABINA", "COBICISTATE", "ELVITEGRAVIR"]
-    if any(s in pa for s in c4_substances):
+    if match_substance(c4_substances):
         return "C4"
 
     # C5 (Anabolizantes)
     c5_substances = ["TESTOSTERONA", "ESTANOZOLOL", "NANDROLONA", "OXANDROLONA", "SOMATROPINA", "OXIMETOLONA", "MESTEROLONA"]
-    if any(s in pa for s in c5_substances):
+    if match_substance(c5_substances):
         return "C5"
         
     # A2 (Entorpecentes de uso permitido)
-    if "TRAMADOL" in pa:
+    if re.search(r"\bTRAMADOL\b", pa):
         if "A2" in nome or "A2" in cls:
             return "A2"
         return "C1"
-    if "CODEINA" in pa or "CODEÍNA" in pa:
+    if re.search(r"\bCODEINA\b", pa) or re.search(r"\bCODEÍNA\b", pa):
         if "A2" in nome or "A2" in cls:
             return "A2"
         return "C1"
@@ -87,7 +90,7 @@ def get_control_list(principio_ativo, classes_str, nome_comercial):
         "ZOLPIDEM", "ZOPICLONA", "ESZOPICLONA", "BUSPIRONA", "LITIO", "LÍTIO", "MEMANTINA", "DONEPEZILA", 
         "RIVASTIGMINA", "GALANTAMINA", "HALOTANO", "ISOFLURANO", "SEVOFLURANO", "PROPOFOL", "CETAMINA"
     ]
-    if any(s in pa for s in c1_substances):
+    if match_substance(c1_substances):
         return "C1"
 
     # AB (Antimicrobianos)
@@ -105,7 +108,7 @@ def get_control_list(principio_ativo, classes_str, nome_comercial):
         "CILASTATINA", "VANCOMICINA", "TEICOPLANINA", "POLIMIXINA", "COLISTINA", 
         "SULFADIAZINA", "NITROFURANTOINA", "MINOCICLINA", "CLORANFENICOL"
     ]
-    has_antibiotic_pa = any(s in pa for s in antibiotic_pas)
+    has_antibiotic_pa = match_substance(antibiotic_pas)
     
     if has_antibiotic_class or has_antibiotic_pa:
         return "AB"

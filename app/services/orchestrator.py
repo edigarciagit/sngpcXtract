@@ -5,6 +5,8 @@ import time
 import random
 import concurrent.futures
 import queue
+import re
+from datetime import datetime
 from math import ceil
 from app.services.scraper_bulk import BulkScraper
 from app.services.scraper_single import SingleScraper
@@ -46,13 +48,14 @@ class ExtractionOrchestrator:
             self.thread.join(timeout=10)
             logger.info("Previous process stopped.")
 
-    def start(self, reuse_bulk=False, num_workers=4, inactive_only=False):
+    def start(self, reuse_bulk=False, num_workers=4, inactive_only=False, auto_confirm=False):
         if self.thread and self.thread.is_alive():
             logger.warning("Process already running. Killing it and starting new...")
             self.stop()
         
+        self.auto_confirm = auto_confirm
         self.stop_event.clear()
-        self.thread = threading.Thread(target=self._run_pipeline, args=(reuse_bulk, num_workers, inactive_only))
+        self.thread = threading.Thread(target=self._run_pipeline, args=(reuse_bulk, num_workers, inactive_only, auto_confirm))
         self.thread.start()
         return True, "Started."
 
@@ -65,7 +68,25 @@ class ExtractionOrchestrator:
         with self._lock:
             return self.status.copy()
 
-    def _run_pipeline(self, reuse_bulk, num_workers, inactive_only):
+    def _run_pipeline(self, reuse_bulk, num_workers, inactive_only, auto_confirm=False):
+        # Capture database presentations state before sync for diffing
+        db_pre_state = {}
+        try:
+            conn = Database._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT registro, nome_comercial, principio_ativo, lista_controle, fabricante FROM presentations")
+            for row in cursor.fetchall():
+                db_pre_state[row[0]] = {
+                    "nome_comercial": row[1],
+                    "principio_ativo": row[2],
+                    "lista_controle": row[3],
+                    "fabricante": row[4]
+                }
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error capturing DB pre-state: {e}")
+
+        grand_total = 0
         try:
             with self._lock:
                 self.status["startTime"] = time.time()
@@ -95,6 +116,9 @@ class ExtractionOrchestrator:
                 bulk = BulkScraper(inactive_only=inactive_only)
                 
                 def on_count_found(count):
+                    if auto_confirm:
+                        logger.info(f"Auto-confirming extraction of {count} products in headless/cron mode.")
+                        return True
                     self._update_status("AWAITING_CONFIRMATION", f"Found {count} products.", count, 0, 5)
                     self.confirmation_event.clear()
                     self.confirmation_event.wait() # Blocking wait
@@ -102,7 +126,7 @@ class ExtractionOrchestrator:
 
                 count = bulk.run(on_count_callback=on_count_found) 
                 
-                if count == 0 and not self.confirmation_response:
+                if count == 0 and not self.confirmation_response and not auto_confirm:
                     self._update_status("IDLE", "Extraction aborted by user.", 0, 0, 0)
                     return
                 
@@ -131,32 +155,28 @@ class ExtractionOrchestrator:
             
             # Dynamic Queue Worker Strategy
             # num_workers is passed as parameter, defaulting to 4
-            if total_items == 0:
-                self._update_dcb_after_extraction(grand_total)
-                self._update_status("COMPLETED", "All items processed successfully.", grand_total, grand_total, 100)
-                return
+            if total_items > 0:
+                # Put all pending codes in queue
+                q = queue.Queue()
+                for item in codes_list:
+                    code = item.get("codigoProduto")
+                    if code:
+                        q.put(code)
 
-            # Put all pending codes in queue
-            q = queue.Queue()
-            for item in codes_list:
-                code = item.get("codigoProduto")
-                if code:
-                    q.put(code)
+                logger.info(f"Starting {num_workers} worker threads for {total_items} items.")
 
-            logger.info(f"Starting {num_workers} worker threads for {total_items} items.")
+                with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+                    futures = [executor.submit(self._worker_process, q) for _ in range(num_workers)]
+                    
+                    # Wait for all to complete
+                    concurrent.futures.wait(futures)
+                    
+                    # Check for exceptions
+                    for future in futures:
+                        if future.exception():
+                            logger.error(f"Worker Thread Error: {future.exception()}")
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-                futures = [executor.submit(self._worker_process, q) for _ in range(num_workers)]
-                
-                # Wait for all to complete
-                concurrent.futures.wait(futures)
-                
-                # Check for exceptions
-                for future in futures:
-                    if future.exception():
-                        logger.error(f"Worker Thread Error: {future.exception()}")
-
-            # Check if execution was interrupted by stop signal
+            # Finish up
             if self.stop_event.is_set():
                 self._update_status("IDLE", "Extraction stopped by user.", grand_total, self.status["current"], self.status["percent"])
             else:
@@ -166,6 +186,8 @@ class ExtractionOrchestrator:
         except Exception as e:
             logger.exception(f"Orchestrator Pipeline Error: {e}")
             self._update_status("ERROR", str(e), 0, 0, 0)
+        finally:
+            self._generate_and_save_report(db_pre_state)
 
     def _worker_process(self, q):
         driver = None
@@ -308,3 +330,98 @@ class ExtractionOrchestrator:
                 logger.error(f"DCB database update failed: {msg}")
         except Exception as dcb_err:
             logger.error(f"Failed to auto-update DCB: {dcb_err}")
+
+    def _generate_and_save_report(self, db_pre_state):
+        db_post_state = {}
+        try:
+            conn = Database._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT registro, nome_comercial, principio_ativo, lista_controle, fabricante FROM presentations")
+            for row in cursor.fetchall():
+                db_post_state[row[0]] = {
+                    "nome_comercial": row[1],
+                    "principio_ativo": row[2],
+                    "lista_controle": row[3],
+                    "fabricante": row[4]
+                }
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error capturing DB post-state: {e}")
+
+        new_presentations = []
+        updated_presentations = []
+        
+        for reg, post_data in db_post_state.items():
+            if reg not in db_pre_state:
+                new_presentations.append({
+                    "registro": reg,
+                    "nome_comercial": post_data["nome_comercial"],
+                    "principio_ativo": post_data["principio_ativo"],
+                    "lista_controle": post_data["lista_controle"],
+                    "fabricante": post_data["fabricante"]
+                })
+            else:
+                pre_data = db_pre_state[reg]
+                if pre_data != post_data:
+                    updated_presentations.append({
+                        "registro": reg,
+                        "nome_comercial": post_data["nome_comercial"],
+                        "principio_ativo": post_data["principio_ativo"],
+                        "lista_controle": post_data["lista_controle"],
+                        "fabricante": post_data["fabricante"],
+                        "previous": pre_data
+                    })
+
+        total_bulk = 0
+        processed_ok = 0
+        failed_err = 0
+        
+        try:
+            conn = Database._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM bulk_products")
+            total_bulk = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM bulk_products WHERE status = 'PROCESSED'")
+            processed_ok = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM bulk_products WHERE status = 'FAILED'")
+            failed_err = cursor.fetchone()[0]
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error reading bulk stats: {e}")
+
+        start_time = self.status.get("startTime") or time.time()
+        end_time = time.time()
+        elapsed = end_time - start_time
+        hrs = int(elapsed // 3600)
+        mins = int((elapsed % 3600) // 60)
+        secs = int(elapsed % 60)
+        duration_str = f"{hrs:02d}:{mins:02d}:{secs:02d}"
+        
+        report_id = datetime.now().strftime("sync_%Y%m%d_%H%M%S")
+        report = {
+            "report_id": report_id,
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "start_time": datetime.fromtimestamp(start_time).strftime("%Y-%m-%d %H:%M:%S"),
+            "end_time": datetime.fromtimestamp(end_time).strftime("%Y-%m-%d %H:%M:%S"),
+            "duration": duration_str,
+            "state": self.status.get("state", "COMPLETED"),
+            "message": self.status.get("message", "Finished."),
+            "total_bulk_codes": total_bulk,
+            "scraped_successfully": processed_ok,
+            "scraped_failed": failed_err,
+            "new_presentations_count": len(new_presentations),
+            "updated_presentations_count": len(updated_presentations),
+            "new_presentations": new_presentations[:50],
+            "updated_presentations": updated_presentations[:50]
+        }
+        
+        reports_dir = "data/reports"
+        os.makedirs(reports_dir, exist_ok=True)
+        report_file = os.path.join(reports_dir, f"{report_id}.json")
+        
+        try:
+            with open(report_file, 'w', encoding='utf-8') as rf:
+                json.dump(report, rf, indent=2, ensure_ascii=False)
+            logger.info(f"Sync report saved to {report_file}")
+        except Exception as e:
+            logger.error(f"Error saving sync report: {e}")

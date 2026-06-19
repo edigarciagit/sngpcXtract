@@ -1,0 +1,8 @@
+{
+  "daily_job": {
+    "enabled": true,
+    "time": "02:00",
+    "num_workers": 4,
+    "inactive_only": false
+  }
+}

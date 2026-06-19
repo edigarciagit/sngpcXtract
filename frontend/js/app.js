@@ -440,9 +440,181 @@ function formatDate(isoString) {
     }
 }
 
-// Global escape listener to close the modal
+// Global escape listener to close modals
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         closeDetailsModal();
+        closeReportDetailsModal();
     }
 });
+
+// --- Tabs & Reports UI Logic ---
+
+function switchTab(tabId) {
+    document.getElementById('database-view').classList.remove('active');
+    document.getElementById('reports-view').classList.remove('active');
+    
+    document.getElementById('tab-btn-database').classList.remove('active');
+    document.getElementById('tab-btn-reports').classList.remove('active');
+    
+    if (tabId === 'database') {
+        document.getElementById('database-view').classList.add('active');
+        document.getElementById('tab-btn-database').classList.add('active');
+    } else if (tabId === 'reports') {
+        document.getElementById('reports-view').classList.add('active');
+        document.getElementById('tab-btn-reports').classList.add('active');
+        loadReportsList();
+    }
+}
+
+async function loadReportsList() {
+    const tbody = document.querySelector('#reports-table tbody');
+    const empty = document.getElementById('reports-empty-state');
+    
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary); padding: 32px;">CARREGANDO RELATÓRIOS...</td></tr>';
+    empty.style.display = 'none';
+    
+    try {
+        const res = await fetch('/api/reports');
+        const list = await res.json();
+        
+        if (list && list.length > 0) {
+            empty.style.display = 'none';
+            tbody.innerHTML = list.map(item => {
+                const dateFormatted = formatDate(item.date);
+                const statusBadge = item.state === 'COMPLETED' 
+                    ? '<span class="badge badge-black" style="border: 1px solid var(--accent); color: var(--accent);">CONCLUÍDO</span>'
+                    : item.state === 'ERROR'
+                        ? '<span class="badge badge-red">ERRO</span>'
+                        : `<span class="badge badge-yellow">${item.state}</span>`;
+                
+                return `
+                    <tr style="border-bottom: 1px solid var(--border);" onclick="showReportDetails('${item.report_id}')">
+                        <td style="font-family: var(--font-mono);">${dateFormatted}</td>
+                        <td style="font-family: var(--font-mono); font-weight: 600;">${item.report_id}</td>
+                        <td style="font-family: var(--font-mono);">${item.duration || '--'}</td>
+                        <td>${statusBadge}</td>
+                        <td style="text-align: center; font-family: var(--font-mono);">
+                            ${item.total_bulk_codes || 0} / 
+                            <span style="color: var(--accent); font-weight:600;">${item.scraped_successfully || 0}</span> / 
+                            <span style="color: var(--error); font-weight:600;">${item.scraped_failed || 0}</span>
+                        </td>
+                        <td style="text-align: center; font-family: var(--font-mono);">
+                            <span style="color: var(--accent); font-weight:600;">+${item.new_presentations_count || 0}</span> / 
+                            <span style="color: var(--text-secondary); font-weight:600;">~${item.updated_presentations_count || 0}</span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            tbody.innerHTML = '';
+            empty.style.display = 'flex';
+        }
+    } catch (e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 12px; color: var(--error);">Erro ao carregar relatórios.</td></tr>';
+    }
+}
+
+async function showReportDetails(reportId) {
+    try {
+        const res = await fetch(`/api/reports/detail?id=${reportId}`);
+        if (!res.ok) {
+            alert(`Erro ao buscar detalhes do relatório: ${res.statusText}`);
+            return;
+        }
+        const report = await res.json();
+        
+        // Header
+        document.getElementById('report-details-title').textContent = `RELATÓRIO: ${report.report_id}`;
+        document.getElementById('report-details-subtitle').textContent = `MENSAGEM: ${report.message || 'Sem mensagem.'}`;
+        
+        // Sumário de Execução
+        document.getElementById('rep-date').textContent = formatDate(report.date);
+        document.getElementById('rep-start-time').textContent = report.start_time || '--';
+        document.getElementById('rep-end-time').textContent = report.end_time || '--';
+        document.getElementById('rep-duration').textContent = report.duration || '--';
+        document.getElementById('rep-status').innerHTML = report.state === 'COMPLETED'
+            ? '<span class="badge badge-black" style="border: 1px solid var(--accent); color: var(--accent);">COMPLETED</span>'
+            : `<span class="badge badge-red">${report.state}</span>`;
+        document.getElementById('rep-message').textContent = report.message || '--';
+        
+        // Métricas
+        document.getElementById('rep-total-bulk').textContent = report.total_bulk_codes || 0;
+        document.getElementById('rep-scraped-success').textContent = report.scraped_successfully || 0;
+        document.getElementById('rep-scraped-failed').textContent = report.scraped_failed || 0;
+        document.getElementById('rep-new-count').textContent = report.new_presentations_count || 0;
+        document.getElementById('rep-updated-count').textContent = report.updated_presentations_count || 0;
+        
+        // New Presentations Table
+        const newTableBody = document.querySelector('#rep-new-table tbody');
+        if (report.new_presentations && report.new_presentations.length > 0) {
+            newTableBody.innerHTML = report.new_presentations.map(item => `
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="font-family: var(--font-mono); font-weight: 500;">${item.registro || '--'}</td>
+                    <td style="font-weight: 600; text-transform: uppercase;">${item.nome_comercial || '--'}</td>
+                    <td style="color: var(--text-secondary); text-transform: uppercase;">${item.principio_ativo || '--'}</td>
+                    <td style="text-transform: uppercase;">${item.fabricante || '--'}</td>
+                    <td><span class="badge badge-default">${item.lista_controle || '--'}</span></td>
+                </tr>
+            `).join('');
+        } else {
+            newTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 12px;">Nenhuma nova apresentação adicionada.</td></tr>';
+        }
+        
+        // Updated Presentations Table
+        const updatedTableBody = document.querySelector('#rep-updated-table tbody');
+        if (report.updated_presentations && report.updated_presentations.length > 0) {
+            const diffRows = [];
+            
+            report.updated_presentations.forEach(item => {
+                const prev = item.previous || {};
+                const fields = ['nome_comercial', 'principio_ativo', 'lista_controle', 'fabricante'];
+                fields.forEach(field => {
+                    const prevVal = prev[field];
+                    const currVal = item[field];
+                    if (prevVal !== currVal) {
+                        const fieldLabel = field === 'nome_comercial' ? 'NOME COMERCIAL' 
+                                         : field === 'principio_ativo' ? 'PRINCÍPIO ATIVO'
+                                         : field === 'lista_controle' ? 'LISTA CONTROLE'
+                                         : 'FABRICANTE';
+                        
+                        diffRows.push(`
+                            <tr style="border-bottom: 1px solid var(--border);">
+                                <td style="font-family: var(--font-mono); font-weight: 500;">${item.registro || '--'}</td>
+                                <td style="font-weight: 600; text-transform: uppercase;">${item.nome_comercial || prev.nome_comercial || '--'}</td>
+                                <td style="font-family: var(--font-mono); text-transform: uppercase; color: var(--text-secondary);">${fieldLabel}</td>
+                                <td class="diff-removed">${prevVal || 'N/A'}</td>
+                                <td class="diff-added">${currVal || 'N/A'}</td>
+                            </tr>
+                        `);
+                    }
+                });
+            });
+            
+            if (diffRows.length > 0) {
+                updatedTableBody.innerHTML = diffRows.join('');
+            } else {
+                updatedTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 12px;">Nenhuma alteração estrutural nos campos principais.</td></tr>';
+            }
+        } else {
+            updatedTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 12px;">Nenhuma apresentação modificada.</td></tr>';
+        }
+        
+        // Open Modal
+        document.getElementById('report-details-modal').style.display = 'flex';
+    } catch (e) {
+        console.error(e);
+        alert("Erro ao carregar detalhes do relatório: " + e.message);
+    }
+}
+
+function closeReportDetailsModal() {
+    document.getElementById('report-details-modal').style.display = 'none';
+}
+
+function handleReportDetailsModalClick(event) {
+    if (event.target === document.getElementById('report-details-modal')) {
+        closeReportDetailsModal();
+    }
+}

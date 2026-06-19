@@ -532,3 +532,75 @@ tbody tr {
     color: var(--text-primary);
     border-bottom-color: var(--text-primary);
 }
+
+/* --- Tab Navigation --- */
+.tabs-header {
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 56px;
+    align-items: stretch;
+    gap: 24px;
+}
+
+.tab-btn {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0 4px;
+    transition: all 0.2s var(--ease);
+    display: flex;
+    align-items: center;
+}
+
+.tab-btn:hover {
+    color: var(--text-primary);
+}
+
+.tab-btn.active {
+    color: var(--text-primary);
+    border-bottom-color: var(--text-primary);
+}
+
+.tab-content {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.tab-content.active {
+    display: flex;
+}
+
+/* --- Compact Modal Tables --- */
+.modal-body table th,
+.modal-body table td {
+    padding: 8px 12px;
+    min-height: auto;
+    font-size: 11px;
+}
+
+.modal-body table tr {
+    animation: none;
+    opacity: 1;
+}
+
+.diff-removed {
+    text-decoration: line-through;
+    color: var(--error);
+    opacity: 0.8;
+}
+
+.diff-added {
+    color: var(--accent);
+    font-weight: 500;
+}

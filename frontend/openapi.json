@@ -359,6 +359,68 @@
           }
         }
       }
+    },
+    "/api/reports": {
+      "get": {
+        "summary": "Listar Relatórios Diários",
+        "description": "Retorna uma lista resumida de todos os relatórios de execução diária disponíveis no servidor.",
+        "responses": {
+          "200": {
+            "description": "Lista de relatórios diários obtida com sucesso.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SyncReportSummary"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro interno no servidor."
+          }
+        }
+      }
+    },
+    "/api/reports/detail": {
+      "get": {
+        "summary": "Obter Detalhes do Relatório Diário",
+        "description": "Retorna os detalhes completos de um relatório específico identificado por seu ID.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "ID do relatório (ex: sync_20260619_161121).",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detalhes do relatório obtidos com sucesso.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncReportDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "ID de relatório ausente ou inválido."
+          },
+          "404": {
+            "description": "Relatório não encontrado."
+          },
+          "500": {
+            "description": "Erro interno no servidor."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -524,6 +586,75 @@
           "updated_at": {
             "type": "string",
             "example": "2026-06-11 13:24:44"
+          }
+        }
+      },
+      "SyncReportSummary": {
+        "type": "object",
+        "properties": {
+          "report_id": { "type": "string", "example": "sync_20260619_161121" },
+          "date": { "type": "string", "example": "2026-06-19" },
+          "start_time": { "type": "string", "example": "2026-06-19 16:11:21" },
+          "end_time": { "type": "string", "example": "2026-06-19 16:12:45" },
+          "duration": { "type": "string", "example": "00:01:24" },
+          "state": { "type": "string", "example": "COMPLETED" },
+          "message": { "type": "string", "example": "Finished." },
+          "total_bulk_codes": { "type": "integer", "example": 100 },
+          "scraped_successfully": { "type": "integer", "example": 98 },
+          "scraped_failed": { "type": "integer", "example": 2 },
+          "new_presentations_count": { "type": "integer", "example": 5 },
+          "updated_presentations_count": { "type": "integer", "example": 1 }
+        }
+      },
+      "SyncReportDetail": {
+        "type": "object",
+        "properties": {
+          "report_id": { "type": "string", "example": "sync_20260619_161121" },
+          "date": { "type": "string", "example": "2026-06-19" },
+          "start_time": { "type": "string", "example": "2026-06-19 16:11:21" },
+          "end_time": { "type": "string", "example": "2026-06-19 16:12:45" },
+          "duration": { "type": "string", "example": "00:01:24" },
+          "state": { "type": "string", "example": "COMPLETED" },
+          "message": { "type": "string", "example": "Finished." },
+          "total_bulk_codes": { "type": "integer", "example": 100 },
+          "scraped_successfully": { "type": "integer", "example": 98 },
+          "scraped_failed": { "type": "integer", "example": 2 },
+          "new_presentations_count": { "type": "integer", "example": 5 },
+          "updated_presentations_count": { "type": "integer", "example": 1 },
+          "new_presentations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "registro": { "type": "string", "example": "1015502210080" },
+                "nome_comercial": { "type": "string", "example": "SONORIPAN" },
+                "principio_ativo": { "type": "string", "example": "VALERIANA OFFICINALIS L." },
+                "lista_controle": { "type": "string", "example": "N/A" },
+                "fabricante": { "type": "string", "example": "MARJAN INDÚSTRIA E COMÉRCIO LTDA" }
+              }
+            }
+          },
+          "updated_presentations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "registro": { "type": "string", "example": "1015502210080" },
+                "nome_comercial": { "type": "string", "example": "SONORIPAN" },
+                "principio_ativo": { "type": "string", "example": "VALERIANA OFFICINALIS L." },
+                "lista_controle": { "type": "string", "example": "A1" },
+                "fabricante": { "type": "string", "example": "MARJAN INDÚSTRIA E COMÉRCIO LTDA" },
+                "previous": {
+                  "type": "object",
+                  "properties": {
+                    "nome_comercial": { "type": "string", "example": "SONORIPAN" },
+                    "principio_ativo": { "type": "string", "example": "VALERIANA OFFICINALIS L." },
+                    "lista_controle": { "type": "string", "example": "N/A" },
+                    "fabricante": { "type": "string", "example": "MARJAN INDÚSTRIA E COMÉRCIO LTDA" }
+                  }
+                }
+              }
+            }
           }
         }
       }

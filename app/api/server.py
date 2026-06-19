@@ -8,6 +8,7 @@ import os
 import math
 import csv
 import io
+import re
 from app.services.orchestrator import ExtractionOrchestrator
 from app.core.database import Database
 from app.core.logger import get_logger
@@ -39,6 +40,10 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_logs()
         elif self.path.startswith('/api/ms/'):
             self.handle_ms()
+        elif self.path.startswith('/api/reports/detail'):
+            self.handle_report_detail()
+        elif self.path == '/api/reports':
+            self.handle_reports_list()
         else:
             # Fallback
             if not self.path.startswith("/frontend/") and not self.path.startswith("/api/"):
@@ -292,6 +297,78 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             logger.error(f"Error handling logs API: {e}")
             self.send_error(500, str(e))
 
+    def handle_reports_list(self):
+        try:
+            reports_dir = "data/reports"
+            reports = []
+            if os.path.exists(reports_dir):
+                for filename in os.listdir(reports_dir):
+                    if filename.startswith("sync_") and filename.endswith(".json"):
+                        filepath = os.path.join(reports_dir, filename)
+                        try:
+                            with open(filepath, 'r', encoding='utf-8') as f:
+                                data = json.load(f)
+                                reports.append({
+                                    "report_id": data.get("report_id"),
+                                    "date": data.get("date"),
+                                    "start_time": data.get("start_time"),
+                                    "end_time": data.get("end_time"),
+                                    "duration": data.get("duration"),
+                                    "state": data.get("state"),
+                                    "message": data.get("message"),
+                                    "total_bulk_codes": data.get("total_bulk_codes"),
+                                    "scraped_successfully": data.get("scraped_successfully"),
+                                    "scraped_failed": data.get("scraped_failed"),
+                                    "new_presentations_count": data.get("new_presentations_count"),
+                                    "updated_presentations_count": data.get("updated_presentations_count")
+                                })
+                        except Exception as file_err:
+                            logger.error(f"Error reading report file {filename}: {file_err}")
+            
+            reports.sort(key=lambda x: x.get("report_id", ""), reverse=True)
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(reports).encode('utf-8'))
+        except Exception as e:
+            logger.error(f"Error handling reports list API: {e}")
+            self.send_error(500, str(e))
+
+    def handle_report_detail(self):
+        try:
+            query = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(query)
+            report_id = params.get('id', [None])[0]
+            
+            if not report_id:
+                self.send_error(400, "Bad Request: Missing 'id' parameter.")
+                return
+                
+            if not re.match(r'^sync_\d{8}_\d{6}$', report_id):
+                self.send_error(400, "Bad Request: Invalid report ID format.")
+                return
+                
+            reports_dir = "data/reports"
+            filepath = os.path.join(reports_dir, f"{report_id}.json")
+            
+            if not os.path.exists(filepath):
+                self.send_error(404, f"Report {report_id} not found.")
+                return
+                
+            with open(filepath, 'r', encoding='utf-8') as f:
+                report_data = json.load(f)
+                
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(report_data).encode('utf-8'))
+        except Exception as e:
+            logger.error(f"Error handling report detail API: {e}")
+            self.send_error(500, str(e))
+
 def run_server():
     socketserver.TCPServer.allow_reuse_address = True
     # Initialize DB on startup
@@ -311,6 +388,14 @@ def run_server():
     except Exception as e:
         logger.error(f"Error checking/auto-importing DCB on startup: {e}")
         
+    # Start the Daily Scheduler
+    try:
+        from app.services.scheduler import DailyScheduler
+        scheduler = DailyScheduler()
+        scheduler.start()
+    except Exception as e:
+        logger.error(f"Failed to start Daily Scheduler: {e}")
+
     with socketserver.TCPServer(("", PORT), ProxyHTTPRequestHandler) as httpd:
         logger.info(f"API Server started and listening at http://localhost:{PORT}")
         httpd.serve_forever()
