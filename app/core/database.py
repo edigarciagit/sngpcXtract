@@ -767,3 +767,41 @@ class Database:
         conn.close()
         return result
 
+    @staticmethod
+    def get_sync_presentations(page=1, size=100):
+        """Retrieves paginated raw presentations for external synchronization"""
+        conn = Database._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        offset = (page - 1) * size
+        cursor.execute('''
+            SELECT 
+                registro, 
+                nome_comercial, 
+                principio_ativo, 
+                lista_controle, 
+                cnpj_empresa, 
+                codigo_produto, 
+                fabricante, 
+                unidade_medida_medicamento, 
+                ativa 
+            FROM presentations 
+            ORDER BY id ASC 
+            LIMIT ? OFFSET ?
+        ''', (size, offset))
+        rows = cursor.fetchall()
+        result = [dict(row) for row in rows]
+        conn.close()
+        return result
+
+    @staticmethod
+    def get_sync_presentations_count():
+        """Returns the total number of presentations rows for sync calculations"""
+        conn = Database._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM presentations')
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
+
+

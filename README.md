@@ -46,6 +46,32 @@ sngpcXtract/
   - Classes Terapêuticas
 - **Resiliência**: Capacidade de retomar extrações e reutilizar dados já coletados.
 
+## 🔌 API de Integração Externa (Oracle Sync)
+
+A aplicação disponibiliza um endpoint REST dedicado para integração com sistemas externos (ex: sistemas em Java para sincronização com base Oracle):
+
+* **Endpoint**: `GET /api/external/presentations`
+* **Parâmetros de Consulta (Query Params)**:
+  * `page` (opcional, padrão `1`): Página atual dos resultados.
+  * `size` (opcional, padrão `100`): Quantidade de registros por página.
+* **Modelo do Item Retornado**:
+  ```json
+  {
+    "registro_ms": "1039001660013",
+    "nome_medicamento": "NUTRICAL D",
+    "principio_ativo": "CARBONATO DE CÁLCIO, COLECALCIFEROL",
+    "lista_controle": "N/A",
+    "cnpj_fabricante": "33349473000158",
+    "sku_anvisa": 395088,
+    "fabricante_laboratorio": "FARMOQUÍMICA S/A",
+    "unidade_medida": 2,
+    "codigo_dcb": "01748",
+    "codigo_cas": "471-34-1",
+    "status_registro_anvisa": "INATIVO"
+  }
+  ```
+  *Nota*: Os campos `codigo_dcb` e `codigo_cas` extraem e retornam apenas os valores correspondentes ao IFA (Ingrediente Farmacêutico Ativo) principal de controle, priorizando a classificação `IFA` ou `BIO` e sem concatenação de múltiplos códigos.
+
 ## 🛠 Como Executar
 
 1. **Pré-requisitos**: Python 3.10 ou superior instalado.

@@ -44,6 +44,8 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_report_detail()
         elif self.path == '/api/reports':
             self.handle_reports_list()
+        elif self.path.startswith('/api/external/presentations'):
+            self.handle_external_presentations()
         else:
             # Fallback
             if not self.path.startswith("/frontend/") and not self.path.startswith("/api/"):
@@ -367,6 +369,79 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(report_data).encode('utf-8'))
         except Exception as e:
             logger.error(f"Error handling report detail API: {e}")
+            self.send_error(500, str(e))
+
+    def handle_external_presentations(self):
+        try:
+            query = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(query)
+            page = int(params.get('page', [1])[0])
+            size = int(params.get('size', [100])[0])
+            
+            logger.info(f"External presentations query: page={page}, size={size}")
+            
+            # Fetch total count
+            total_elements = Database.get_sync_presentations_count()
+            total_pages = math.ceil(total_elements / size) if size > 0 else 1
+            
+            # Fetch paginated rows
+            presentations = Database.get_sync_presentations(page, size)
+            
+            from app.services.dcb_service import DCBService
+            
+            content = []
+            for p in presentations:
+                # Retrieve DCB list details
+                dcb_details = DCBService.get_dcb_details_for_product(p.get("principio_ativo"))
+                
+                # Choose the primary/first active ingredient (IFA/BIO preferred, fallback to first)
+                selected_dcb = None
+                if dcb_details:
+                    # Filter for substances classified as IFA or BIO
+                    ifa_details = [d for d in dcb_details if d.get("classificacao") in ("IFA", "BIO")]
+                    if ifa_details:
+                        selected_dcb = ifa_details[0]
+                    else:
+                        selected_dcb = dcb_details[0]
+                
+                if selected_dcb:
+                    codigo_dcb = selected_dcb.get("codigo_dcb") or "N/A"
+                    codigo_cas = selected_dcb.get("cas") or "N/A"
+                else:
+                    codigo_dcb = "N/A"
+                    codigo_cas = "N/A"
+                
+                mapped_item = {
+                    "registro_ms": p.get("registro"),
+                    "nome_medicamento": p.get("nome_comercial"),
+                    "principio_ativo": p.get("principio_ativo"),
+                    "lista_controle": p.get("lista_controle"),
+                    "cnpj_fabricante": p.get("cnpj_empresa"),
+                    "sku_anvisa": p.get("codigo_produto"),
+                    "fabricante_laboratorio": p.get("fabricante"),
+                    "unidade_medida": p.get("unidade_medida_medicamento"),
+                    "codigo_dcb": codigo_dcb,
+                    "codigo_cas": codigo_cas,
+                    "status_registro_anvisa": "ATIVO" if p.get("ativa") else "INATIVO"
+                }
+                content.append(mapped_item)
+                
+            response = {
+                "content": content,
+                "totalPages": total_pages,
+                "totalElements": total_elements,
+                "page": page,
+                "size": size
+            }
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(response).encode('utf-8'))
+            
+        except Exception as e:
+            logger.error(f"Error handling external presentations: {e}")
             self.send_error(500, str(e))
 
 def run_server():
